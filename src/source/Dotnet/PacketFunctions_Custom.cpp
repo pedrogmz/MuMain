@@ -14,6 +14,7 @@
 #include "stdafx.h"
 #include "Connection.h"
 #include "PacketFunctions_ClientToServer.h"
+#include "Core/Globals/_crypt.h"
 
 typedef void(CORECLR_DELEGATE_CALLTYPE* SendLoginFn)(int32_t, const char16_t*, const char16_t*, uint32_t, const BYTE*,
                                                      const BYTE*);
@@ -21,6 +22,51 @@ typedef void(CORECLR_DELEGATE_CALLTYPE* SendLoginFn)(int32_t, const char16_t*, c
 void PacketFunctions_ClientToServer_Custom::SendLogin(const wchar_t* username, const wchar_t* password,
                                                       const BYTE* clientVersion, const BYTE* clientSerial)
 {
+#ifdef __EMSCRIPTEN__
+    BYTE packet[60] = { 0 };
+    packet[0] = 0xC3;
+    packet[1] = sizeof(packet);
+    packet[2] = 0xF1;
+    packet[3] = 0x01;
+
+    // Username (10 bytes max, XOR3 converted)
+    if (username)
+    {
+        for (int i = 0; i < 10 && username[i]; ++i)
+        {
+            packet[4 + i] = static_cast<BYTE>(username[i] & 0xFF);
+        }
+        BuxConvert(&packet[4], 10);
+    }
+
+    // Password (20 bytes max, XOR3 converted)
+    if (password)
+    {
+        for (int i = 0; i < 20 && password[i]; ++i)
+        {
+            packet[14 + i] = static_cast<BYTE>(password[i] & 0xFF);
+        }
+        BuxConvert(&packet[14], 20);
+    }
+
+    const uint32_t tick = static_cast<uint32_t>(GetTickCount());
+    packet[34] = static_cast<BYTE>((tick >> 24) & 0xFF);
+    packet[35] = static_cast<BYTE>((tick >> 16) & 0xFF);
+    packet[36] = static_cast<BYTE>((tick >> 8) & 0xFF);
+    packet[37] = static_cast<BYTE>(tick & 0xFF);
+
+    if (clientVersion)
+    {
+        std::memcpy(&packet[38], clientVersion, 5);
+    }
+
+    if (clientSerial)
+    {
+        std::memcpy(&packet[43], clientSerial, 16);
+    }
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static SendLoginFn dotnet_SendLogin = nullptr;
     if (!dotnet_SendLogin)
     {
@@ -34,6 +80,7 @@ void PacketFunctions_ClientToServer_Custom::SendLogin(const wchar_t* username, c
     // .NET expects UTF-16 (char16_t). On macOS, wchar_t is 4 bytes (UTF-32) — MU_C16 converts.
     dotnet_SendLogin(this->GetHandle(), MU_C16(username), MU_C16(password), GetTickCount(), clientVersion,
                      clientSerial);
+#endif
 }
 
 typedef void(CORECLR_DELEGATE_CALLTYPE* SendAuthenticateExtFn)(int32_t, uint16_t, uint32_t);

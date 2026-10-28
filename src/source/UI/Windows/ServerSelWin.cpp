@@ -1,5 +1,6 @@
 
 #include "stdafx.h"
+#include "Core/Utilities/Log/MuLogger.h"
 #include "ServerSelWin.h"
 #include "Core/Input/Input.h"
 #include "UI/Core/SceneUICoordinator.h"
@@ -83,8 +84,11 @@ void CServerSelWin::BindRmlModel(Rml::DataModelConstructor& c, ServerSelRmlModel
     c.BindEventCallback("serversel_select_group",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& arguments)
         {
-            if (arguments.size() == 1)
-                RmlClickSelectGroup(arguments[0].Get<int>(-1));
+            int nBtnPos = -1;
+            if (!arguments.empty())
+                nBtnPos = arguments[0].Get<int>(-1);
+            mu::log::Get("core")->info("[ServerSel] serversel_select_group fired, arg={}", nBtnPos);
+            RmlClickSelectGroup(nBtnPos);
         });
     c.BindEventCallback("serversel_select_server",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& arguments)
@@ -201,13 +205,44 @@ void CServerSelWin::UpdateDisplay()
 
 void CServerSelWin::SelectGroup(int nBtnPos)
 {
+    mu::log::Get("core")->info("[ServerSel] SelectGroup called, nBtnPos={}", nBtnPos);
+
     if (m_iSelectServerBtnIndex != -1)
     {
         for (auto& entry : m_RmlView.GetModel().groups)
             if (entry.btnPos == m_iSelectServerBtnIndex) entry.checked = false;
     }
 
+    if (nBtnPos < 0 && !m_RmlView.GetModel().groups.empty())
+        nBtnPos = m_RmlView.GetModel().groups[0].btnPos;
+
     m_iSelectServerBtnIndex = nBtnPos;
+
+    UpdateDisplay();
+
+    if (m_pSelectServerGroup == nullptr)
+    {
+        CServerGroup* pGroup = nullptr;
+        g_ServerListManager->SetFirst();
+        if (g_ServerListManager->GetNext(pGroup))
+            m_pSelectServerGroup = pGroup;
+    }
+
+    if (m_pSelectServerGroup != nullptr)
+    {
+        CServerInfo* pServerInfo = m_pSelectServerGroup->GetServerInfo(0);
+        if (pServerInfo == nullptr)
+        {
+            m_pSelectServerGroup->SetFirst();
+            m_pSelectServerGroup->GetNext(pServerInfo);
+        }
+        if (pServerInfo != nullptr && pServerInfo->m_iPercent < 100)
+        {
+            mu::log::Get("core")->info("[ServerSel] Directly connecting to default server in group");
+            ConnectToServer(pServerInfo);
+            return;
+        }
+    }
 
     SyncRmlModel();
 
@@ -216,11 +251,13 @@ void CServerSelWin::SelectGroup(int nBtnPos)
 
 void CServerSelWin::RmlClickSelectGroup(int nBtnPos)
 {
+    mu::log::Get("core")->info("[ServerSel] RmlClickSelectGroup called, nBtnPos={}", nBtnPos);
     SelectGroup(nBtnPos);
 }
 
 void CServerSelWin::RmlClickSelectServer(int nServerIndex)
 {
+    mu::log::Get("core")->info("[ServerSel] RmlClickSelectServer called, nServerIndex={}", nServerIndex);
     if (m_pSelectServerGroup == nullptr)
         return;
 
@@ -242,6 +279,8 @@ bool CServerSelWin::ConnectToServer(CServerInfo* pServerInfo)
 {
     if (pServerInfo == nullptr || m_pSelectServerGroup == nullptr)
         return false;
+
+    mu::log::Get("core")->info("[ServerSel] ConnectToServer connecting to index {}", pServerInfo->m_iConnectIndex);
 
     Show(false);
 

@@ -600,11 +600,16 @@ void CLoginWin::CancelLogin()
 
     m_bConnectionReconnectInFlight.store(true);
     m_bConnectionReconnectDone.store(false);
+#ifdef __EMSCRIPTEN__
+    ConnectConnectionServer();
+    m_bConnectionReconnectDone.store(true);
+#else
     m_ConnectionReconnectThread = std::thread([this]
     {
         ConnectConnectionServer();
         m_bConnectionReconnectDone.store(true);
     });
+#endif
 }
 
 void CLoginWin::ProcessPendingConnectionReconnect()

@@ -110,7 +110,7 @@
     {
       "name": "linux-x64",
       "displayName": "Linux x86_64",
-      "description": "Native Linux x64 player build (no editor, no control socket) — full build target, must compile and pass tests",
+      "description": "Native Linux x64 player build (no editor, no control socket) \u2014 full build target, must compile and pass tests",
       "inherits": "linux-base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-x64.cmake",
       "cacheVariables": {
@@ -121,7 +121,7 @@
     {
       "name": "linux-x64-mueditor",
       "displayName": "Linux x86_64 MuEditor",
-      "description": "Native Linux x64 developer build: editor features and the control socket — also the compile database that lets clangd index src/MuEditor and App/Control",
+      "description": "Native Linux x64 developer build: editor features and the control socket \u2014 also the compile database that lets clangd index src/MuEditor and App/Control",
       "inherits": "linux-x64",
       "cacheVariables": {
         "ENABLE_EDITOR": "ON",
@@ -148,12 +148,37 @@
     {
       "name": "macos-arm64",
       "displayName": "macOS arm64",
-      "description": "Native macOS Apple Silicon player build (no editor, no control socket) — full build target, must compile and pass tests",
+      "description": "Native macOS Apple Silicon player build (no editor, no control socket) \u2014 full build target, must compile and pass tests",
       "inherits": "macos-base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/macos-arm64.cmake",
       "cacheVariables": {
         "ENABLE_EDITOR": "OFF",
         "ENABLE_CONTROL_SOCKET": "OFF"
+      }
+    },
+    {
+      "name": "wasm-base",
+      "hidden": true,
+      "description": "Base configuration for WebAssembly builds (Emscripten)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/wasm.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "OFF",
+        "ENABLE_EDITOR": "OFF",
+        "ENABLE_CONTROL_SOCKET": "OFF",
+        "MU_ENABLE_SHADER_COMPILATION": "OFF",
+        "MU_COPY_RUNTIME_ASSETS": "OFF"
+      }
+    },
+    {
+      "name": "wasm-web",
+      "displayName": "WebAssembly (WASM)",
+      "description": "WASM Web client for openmu-browser-stack",
+      "inherits": "wasm-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
@@ -246,6 +271,12 @@
       "name": "macos-arm64-release",
       "displayName": "macOS arm64 Release",
       "configurePreset": "macos-arm64",
+      "configuration": "Release"
+    },
+    {
+      "name": "wasm-release",
+      "displayName": "WASM Release",
+      "configurePreset": "wasm-web",
       "configuration": "Release"
     }
   ]

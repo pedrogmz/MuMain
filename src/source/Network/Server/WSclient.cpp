@@ -710,15 +710,44 @@ void ReceiveCharacterListExtended(const BYTE* ReceiveBuffer)
     g_ErrorReport.Write(L"[ReceiveList Count %d Max class %d]", Data->CharacterCount, Data->MaxClass);
 #endif
 
+    const int totalSize = ReceiveBuffer[1];
+    const int entrySize = (Data->CharacterCount > 0)
+        ? ((totalSize - Offset) / Data->CharacterCount)
+        : 34;
+
     CharacterAttribute->IsVaultExtended = Data->IsVaultExtended;
     for (int i = 0; i < Data->CharacterCount; i++)
     {
-        auto Data2 = (LPPRECEIVE_CHARACTER_LIST_EXTENDED)(ReceiveBuffer + Offset);
-
-        auto iClass = gCharacterManager.ChangeServerClassTypeToClientClassType(Data2->Class);
         float fPos[2], fAngle = 0.0f;
+        BYTE index = 0;
+        WORD level = 0;
+        BYTE ctlCode = 0;
+        BYTE guildStatus = 0;
+        CLASS_TYPE iClass = CLASS_KNIGHT;
+        const char* charId = nullptr;
 
-        switch (Data2->Index)
+        if (entrySize <= 34)
+        {
+            auto Data2 = (LPPRECEIVE_CHARACTER_LIST)(ReceiveBuffer + Offset);
+            index = Data2->Index;
+            level = Data2->Level;
+            ctlCode = Data2->CtlCode;
+            guildStatus = Data2->byGuildStatus;
+            charId = Data2->ID;
+            iClass = gCharacterManager.ChangeServerClassTypeToClientClassType(Data2->Class);
+        }
+        else
+        {
+            auto Data2 = (LPPRECEIVE_CHARACTER_LIST_EXTENDED)(ReceiveBuffer + Offset);
+            index = Data2->Index;
+            level = Data2->Level;
+            ctlCode = Data2->CtlCode;
+            guildStatus = Data2->byGuildStatus;
+            charId = Data2->ID;
+            iClass = gCharacterManager.ChangeServerClassTypeToClientClassType(Data2->Class);
+        }
+
+        switch (index)
         {
         case 0:
             fPos[0] = 8008.0f;
@@ -746,22 +775,31 @@ void ReceiveCharacterListExtended(const BYTE* ReceiveBuffer)
             fAngle = 35.0f;
             break;
         default:
-            return;
+            Offset += entrySize;
+            continue;
         }
 
-        CHARACTER* c = CreateHero(Data2->Index, iClass, 0, fPos[0], fPos[1], fAngle);
+        CHARACTER* c = CreateHero(index, iClass, 0, fPos[0], fPos[1], fAngle);
 
-        c->Level = Data2->Level;
-        c->CtlCode = Data2->CtlCode;
+        c->Level = level;
+        c->CtlCode = ctlCode;
 
         memset(c->ID, 0, sizeof(c->ID));
+        CMultiLanguage::ConvertFromUtf8(c->ID, charId, MAX_USERNAME_SIZE);
 
-        CMultiLanguage::ConvertFromUtf8(c->ID, Data2->ID, MAX_USERNAME_SIZE);
+        if (entrySize <= 34)
+        {
+            // For standard 34-byte packet, Appearance starts at offset 15 (18 bytes)
+            ChangeCharacterExt(index, const_cast<BYTE*>(ReceiveBuffer + Offset + 15));
+        }
+        else
+        {
+            auto Data2 = (LPPRECEIVE_CHARACTER_LIST_EXTENDED)(ReceiveBuffer + Offset);
+            ReadEquipmentExtended(index, Data2->Flags, Data2->Equipment);
+        }
 
-        ReadEquipmentExtended(Data2->Index, Data2->Flags, Data2->Equipment);
-
-        c->GuildStatus = Data2->byGuildStatus;
-        Offset += sizeof(PRECEIVE_CHARACTER_LIST_EXTENDED);
+        c->GuildStatus = guildStatus;
+        Offset += entrySize;
     }
 
     CurrentProtocolState = RECEIVE_CHARACTERS_LIST;
@@ -1097,41 +1135,127 @@ BOOL ReceiveJoinMapServer(std::span<const BYTE> ReceiveBuffer)
     CharacterAttribute->AbilityTime[1] = 0;
     CharacterAttribute->AbilityTime[2] = 0;
 
-    auto const Data = safe_cast<PRECEIVE_JOIN_MAP_SERVER_EXTENDED>(ReceiveBuffer, "PRECEIVE_JOIN_MAP_SERVER_EXTENDED");
-    if (Data == nullptr)
+    BYTE posX = 0, posY = 0, angle = 0, pk = 0, ctlCode = 0, invExt = 0;
+    WORD map = 0;
+    uint64_t exp = 0, nextExp = 0;
+    WORD lvlUp = 0, str = 0, dex = 0, vit = 0, nrg = 0, cha = 0;
+    DWORD life = 0, lifeMax = 0, mana = 0, manaMax = 0, shield = 0, shieldMax = 0, skillMana = 0, skillManaMax = 0, gold = 0;
+    short addPt = 0, maxAddPt = 0;
+    WORD minusPt = 0, maxMinusPt = 0, atkSpd = 0, magSpd = 0, maxAtkSpd = 0, resets = 0;
+
+    if (ReceiveBuffer.size() >= sizeof(PRECEIVE_JOIN_MAP_SERVER_EXTENDED))
     {
+        auto const Data = safe_cast<PRECEIVE_JOIN_MAP_SERVER_EXTENDED>(ReceiveBuffer, "PRECEIVE_JOIN_MAP_SERVER_EXTENDED");
+        if (Data == nullptr)
+        {
+            assert(false);
+            return false;
+        }
+        posX = Data->PositionX;
+        posY = Data->PositionY;
+        map = Data->Map;
+        angle = Data->Angle;
+        exp = ntoh64(Data->CurrentExperience);
+        nextExp = ntoh64(Data->ExperienceForNextLevel);
+        lvlUp = Data->LevelUpPoint;
+        str = Data->Strength;
+        dex = Data->Dexterity;
+        vit = Data->Vitality;
+        nrg = Data->Energy;
+        cha = Data->Charisma;
+        life = Data->Life;
+        lifeMax = Data->LifeMax;
+        mana = Data->Mana;
+        manaMax = Data->ManaMax;
+        shield = Data->Shield;
+        shieldMax = Data->ShieldMax;
+        skillMana = Data->SkillMana;
+        skillManaMax = Data->SkillManaMax;
+        gold = Data->Gold;
+        pk = Data->PK;
+        ctlCode = Data->CtlCode;
+        addPt = Data->AddPoint;
+        maxAddPt = Data->MaxAddPoint;
+        minusPt = Data->wMinusPoint;
+        maxMinusPt = Data->wMaxMinusPoint;
+        invExt = Data->InventoryExtensions;
+        resets = Data->Resets;
+        atkSpd = Data->AttackSpeed;
+        magSpd = Data->MagicSpeed;
+        maxAtkSpd = Data->MaxAttackSpeed;
+    }
+    else if (ReceiveBuffer.size() >= sizeof(PRECEIVE_JOIN_MAP_SERVER))
+    {
+        auto const Data = safe_cast<PRECEIVE_JOIN_MAP_SERVER>(ReceiveBuffer, "PRECEIVE_JOIN_MAP_SERVER");
+        if (Data == nullptr)
+        {
+            assert(false);
+            return false;
+        }
+        posX = Data->PositionX;
+        posY = Data->PositionY;
+        map = Data->Map;
+        angle = 0;
+        exp = ntoh64(Data->CurrentExperience);
+        nextExp = ntoh64(Data->ExperienceForNextLevel);
+        lvlUp = Data->LevelUpPoint;
+        str = Data->Strength;
+        dex = Data->Dexterity;
+        vit = Data->Vitality;
+        nrg = Data->Energy;
+        cha = Data->Charisma;
+        life = Data->Life;
+        lifeMax = Data->LifeMax;
+        mana = Data->Mana;
+        manaMax = Data->ManaMax;
+        shield = Data->Shield;
+        shieldMax = Data->ShieldMax;
+        skillMana = Data->SkillMana;
+        skillManaMax = Data->SkillManaMax;
+        gold = Data->Gold;
+        pk = Data->PK;
+        ctlCode = Data->CtlCode;
+        addPt = Data->AddPoint;
+        maxAddPt = Data->MaxAddPoint;
+        minusPt = Data->wMinusPoint;
+        maxMinusPt = Data->wMaxMinusPoint;
+        invExt = Data->InventoryExtensions;
+    }
+    else
+    {
+        LogSafeCastSizeMismatch("PRECEIVE_JOIN_MAP_SERVER", ReceiveBuffer.size(), sizeof(PRECEIVE_JOIN_MAP_SERVER));
         assert(false);
         return false;
     }
 
-    CharacterAttribute->Experience = ntoh64(Data->CurrentExperience);
-    CharacterAttribute->NextExperience = ntoh64(Data->ExperienceForNextLevel);
-    CharacterAttribute->LevelUpPoint = Data->LevelUpPoint;
-    CharacterAttribute->Strength = Data->Strength;
-    CharacterAttribute->Dexterity = Data->Dexterity;
-    CharacterAttribute->Vitality = Data->Vitality;
-    CharacterAttribute->Energy = Data->Energy;
-    CharacterAttribute->Charisma = Data->Charisma;
-    CharacterAttribute->Life = Data->Life;
-    CharacterAttribute->LifeMax = Data->LifeMax;
-    CharacterAttribute->Mana = Data->Mana;
-    CharacterAttribute->ManaMax = Data->ManaMax;
-    CharacterAttribute->SkillMana = Data->SkillMana;
-    CharacterAttribute->SkillManaMax = Data->SkillManaMax;
-    CharacterAttribute->Shield = Data->Shield;
-    CharacterAttribute->ShieldMax = Data->ShieldMax;
-    CharacterAttribute->AddPoint = Data->AddPoint;
-    CharacterAttribute->MaxAddPoint = Data->MaxAddPoint;
-    CharacterAttribute->wMinusPoint = Data->wMinusPoint;
-    CharacterAttribute->wMaxMinusPoint = Data->wMaxMinusPoint;
-    CharacterAttribute->InventoryExtensions = Data->InventoryExtensions;
-    CharacterAttribute->Resets = Data->Resets;
-    CharacterAttribute->AttackSpeed = Data->AttackSpeed;
-    CharacterAttribute->MagicSpeed = Data->MagicSpeed;
-    CharacterAttribute->MaxAttackSpeed = Data->MaxAttackSpeed;
-    CharacterMachine->Gold = Data->Gold;
+    CharacterAttribute->Experience = exp;
+    CharacterAttribute->NextExperience = nextExp;
+    CharacterAttribute->LevelUpPoint = lvlUp;
+    CharacterAttribute->Strength = str;
+    CharacterAttribute->Dexterity = dex;
+    CharacterAttribute->Vitality = vit;
+    CharacterAttribute->Energy = nrg;
+    CharacterAttribute->Charisma = cha;
+    CharacterAttribute->Life = life;
+    CharacterAttribute->LifeMax = lifeMax;
+    CharacterAttribute->Mana = mana;
+    CharacterAttribute->ManaMax = manaMax;
+    CharacterAttribute->SkillMana = skillMana;
+    CharacterAttribute->SkillManaMax = skillManaMax;
+    CharacterAttribute->Shield = shield;
+    CharacterAttribute->ShieldMax = shieldMax;
+    CharacterAttribute->AddPoint = addPt;
+    CharacterAttribute->MaxAddPoint = maxAddPt;
+    CharacterAttribute->wMinusPoint = minusPt;
+    CharacterAttribute->wMaxMinusPoint = maxMinusPt;
+    CharacterAttribute->InventoryExtensions = invExt;
+    CharacterAttribute->Resets = resets;
+    CharacterAttribute->AttackSpeed = atkSpd;
+    CharacterAttribute->MagicSpeed = magSpd;
+    CharacterAttribute->MaxAttackSpeed = maxAtkSpd;
+    CharacterMachine->Gold = gold;
 
-    gMapManager.WorldActive = Data->Map;
+    gMapManager.WorldActive = map;
     gMapManager.LoadWorld(gMapManager.WorldActive);
 
     if (gMapManager.WorldActive == WD_34CRYWOLF_1ST)
@@ -1141,17 +1265,17 @@ BOOL ReceiveJoinMapServer(std::span<const BYTE> ReceiveBuffer)
 
     matchEvent::CreateEventMatch(gMapManager.WorldActive);
 
-    CreateCharacterPointer(c, MODEL_PLAYER, Data->PositionX, Data->PositionY, ((float)Data->Angle - 1.f) * 45.f);
+    CreateCharacterPointer(c, MODEL_PLAYER, posX, posY, ((float)angle - 1.f) * 45.f);
     c->Key = HeroKey;
 
     g_ConsoleDebug->Write(MCD_RECEIVE, L"0x03 [ReceiveJoinMapServer] Key: %d Map: %d X: %d Y:%d", c->Key,
-                          gMapManager.WorldActive, Data->PositionX, Data->PositionY);
+                          gMapManager.WorldActive, posX, posY);
     OBJECT* o = &c->Object;
     c->Class = CharacterAttribute->Class;
     c->SkinIndex = gCharacterManager.GetSkinModelIndex(c->Class);
     c->Skin = 0;
-    c->PK = Data->PK;
-    c->CtlCode = Data->CtlCode;
+    c->PK = pk;
+    c->CtlCode = ctlCode;
 
     o->Kind = KIND_PLAYER;
     SetCharacterClass(c);
@@ -2130,9 +2254,35 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
 {
     UI::Inventory::RestorePickedItem();
 
-    auto Data = (LPPRECEIVE_TELEPORT_POSITION)ReceiveBuffer;
-    Hero->PositionX = Data->PositionX;
-    Hero->PositionY = Data->PositionY;
+    BYTE bType = ReceiveBuffer[0];
+    int size = (bType == 0xC1 || bType == 0xC3) ? ReceiveBuffer[1] : ((ReceiveBuffer[1] << 8) | ReceiveBuffer[2]);
+
+    WORD Flag = 0;
+    int Map = 0;
+    BYTE PositionX = 0;
+    BYTE PositionY = 0;
+    BYTE Angle = 0;
+
+    if (size >= 15 && ReceiveBuffer[2] == 0x1C && ReceiveBuffer[3] == 0x0F)
+    {
+        Flag = ReceiveBuffer[4];
+        Map = (ReceiveBuffer[5] << 8) | ReceiveBuffer[6];
+        PositionX = ReceiveBuffer[7];
+        PositionY = ReceiveBuffer[8];
+        Angle = ReceiveBuffer[9];
+    }
+    else
+    {
+        auto Data = (LPPRECEIVE_TELEPORT_POSITION)ReceiveBuffer;
+        Flag = Data->Flag;
+        Map = Data->Map;
+        PositionX = Data->PositionX;
+        PositionY = Data->PositionY;
+        Angle = Data->Angle;
+    }
+
+    Hero->PositionX = PositionX;
+    Hero->PositionY = PositionY;
 
     Hero->JumpTime = 0;
 
@@ -2154,7 +2304,7 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
 
     if (gMapManager.WorldActive >= WD_45CURSEDTEMPLE_LV1 && gMapManager.WorldActive <= WD_45CURSEDTEMPLE_LV6)
     {
-        if (!(Data->Map >= WD_45CURSEDTEMPLE_LV1 && Data->Map <= WD_45CURSEDTEMPLE_LV6))
+        if (!(Map >= WD_45CURSEDTEMPLE_LV1 && Map <= WD_45CURSEDTEMPLE_LV6))
         {
             g_CursedTemple->ResetCursedTemple();
             UI::Windows::Hide(mu::ui::window::INTERFACE_CURSEDTEMPLE_GAMESYSTEM);
@@ -2163,8 +2313,8 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
 
     int iEtcPart = Hero->EtcPart;
 
-    o->Angle[2] = ((float)(Data->Angle) - 1.f) * 45.f;
-    if (Data->Flag == 0)
+    o->Angle[2] = ((float)(Angle) - 1.f) * 45.f;
+    if (Flag == 0)
     {
         CreateTeleportEnd(o);
     }
@@ -2176,11 +2326,11 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
         ClearItems();
         ClearCharacters(HeroKey);
         RemoveAllShopTitleExceptHero();
-        if (gMapManager.WorldActive != Data->Map)
+        if (gMapManager.WorldActive != Map)
         {
             int OldWorld = gMapManager.WorldActive;
 
-            gMapManager.WorldActive = Data->Map;
+            gMapManager.WorldActive = Map;
             gMapManager.LoadWorld(gMapManager.WorldActive);
 
             if (gMapManager.WorldActive == WD_34CRYWOLF_1ST)
@@ -2278,7 +2428,7 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
     Hero->Movement = false;
     SetPlayerStop(Hero);
 
-    if (Data->Flag)
+    if (Flag)
         UI::Hud::ShowMapName();
 
     CreateMyGensInfluenceGroundEffect();
@@ -2288,7 +2438,7 @@ BOOL ReceiveTeleport(const BYTE* ReceiveBuffer, BOOL bEncrypted)
         Hero->EtcPart = iEtcPart;
     }
 
-    g_ConsoleDebug->Write(MCD_RECEIVE, L"0x1C [ReceiveTeleport(%d)]", Data->Flag);
+    g_ConsoleDebug->Write(MCD_RECEIVE, L"0x1C [ReceiveTeleport(%d)]", Flag);
 
     App::Control::Events::RecordTeleportPacket();
 

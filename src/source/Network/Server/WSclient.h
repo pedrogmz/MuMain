@@ -338,6 +338,21 @@ typedef struct {
     char         Password[MAX_USERNAME_SIZE];
 } PRECEIVE_CONFIRM_PASSWORD2, * LPPRECEIVE_CONFIRM_PASSWORD2;
 
+#pragma pack(push, 1)
+typedef struct
+{
+    BYTE         Index;
+    char         ID[MAX_USERNAME_SIZE];
+    BYTE         Padding;
+    WORD         Level;
+    BYTE		 CtlCode;
+    SERVER_CLASS_TYPE         Class;
+    BYTE         Equipment[17];
+    BYTE         byGuildStatus;
+} PRECEIVE_CHARACTER_LIST, * LPPRECEIVE_CHARACTER_LIST;
+#pragma pack(pop)
+static_assert(sizeof(PRECEIVE_CHARACTER_LIST) == 34, "PRECEIVE_CHARACTER_LIST must be 34 bytes");
+
 typedef struct
 {
     BYTE         Index;
@@ -366,6 +381,44 @@ typedef struct
 #pragma pack(pop)
 
 //receive join map server
+#pragma pack(push, 1)
+typedef struct
+{
+    PBMSG_HEADER Header;
+    BYTE         SubCode;
+    BYTE         PositionX;
+    BYTE         PositionY;
+    WORD         Map;
+    uint64_t     CurrentExperience;
+    uint64_t     ExperienceForNextLevel;
+    WORD         LevelUpPoint;
+    WORD         Strength;
+    WORD         Dexterity;
+    WORD         Vitality;
+    WORD         Energy;
+    WORD         Life;
+    WORD         LifeMax;
+    WORD         Mana;
+    WORD         ManaMax;
+    WORD         Shield;
+    WORD         ShieldMax;
+    WORD         SkillMana;
+    WORD         SkillManaMax;
+    BYTE         Padding[2];
+    DWORD        Gold;
+    BYTE         PK;
+    BYTE         CtlCode;
+    short        AddPoint;
+    short        MaxAddPoint;
+    WORD         Charisma;
+    WORD         wMinusPoint;
+    WORD         wMaxMinusPoint;
+    BYTE         InventoryExtensions;
+    BYTE         Padding2[3];
+} PRECEIVE_JOIN_MAP_SERVER, * LPPRECEIVE_JOIN_MAP_SERVER;
+static_assert(sizeof(PRECEIVE_JOIN_MAP_SERVER) == 72, "PRECEIVE_JOIN_MAP_SERVER must be 72 bytes");
+#pragma pack(pop)
+
 #pragma pack(push, 1)
 typedef struct
 {

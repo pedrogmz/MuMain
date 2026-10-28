@@ -40,6 +40,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 add_subdirectory(ThirdParty/SDL EXCLUDE_FROM_ALL)
+
+if (EMSCRIPTEN)
+  add_library(XDL_wgpu STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/src/SDL_gpu.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/src/SDL_gpu_webgpu.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/src/XDL_wgpu_surface.c"
+  )
+  get_target_property(sdl_include_dirs SDL3-static INCLUDE_DIRECTORIES)
+  get_target_property(sdl_compile_defs SDL3-static COMPILE_DEFINITIONS)
+  get_target_property(sdl_compile_opts SDL3-static COMPILE_OPTIONS)
+
+  target_include_directories(XDL_wgpu PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/include"
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/src"
+    ${sdl_include_dirs}
+    "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/SDL/src/gpu"
+  )
+  if (sdl_compile_defs)
+    target_compile_definitions(XDL_wgpu PRIVATE ${sdl_compile_defs})
+  endif()
+  target_compile_definitions(XDL_wgpu PRIVATE SDL_GPU_WEBGPU=1)
+  if (sdl_compile_opts)
+    target_compile_options(XDL_wgpu PRIVATE ${sdl_compile_opts})
+  endif()
+  target_compile_options(XDL_wgpu PRIVATE --use-port=emdawnwebgpu)
+  target_link_libraries(XDL_wgpu PUBLIC SDL3::Headers)
+  target_link_options(XDL_wgpu INTERFACE --use-port=emdawnwebgpu)
+endif()
 set(_saved_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
 set(BUILD_SHARED_LIBS OFF)
 FetchContent_MakeAvailable(SDL3_ttf)
@@ -193,7 +222,7 @@ list(FILTER MU_CLIENT_SOURCES EXCLUDE REGEX "[/\\]Render[/\\](Core|RHI|Shaders)[
 # "source/*.cpp", not ThirdParty/.
 list(APPEND MU_CLIENT_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/RmlUi/Backends/RmlUi_Platform_SDL.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/RmlUi/Backends/RmlUi_Renderer_SDL_GPU.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/source/Render/RmlUi/RmlUi_Renderer_SDL_GPU.cpp"
 )
 
 # The control socket and its local-socket transport exist only in developer
@@ -275,8 +304,14 @@ if(MSVC)
   target_compile_options(MuClient PRIVATE $<$<CONFIG:Release>:/Z7>)
 endif()
 target_compile_definitions(MuClient PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
-target_link_libraries(MuClient PUBLIC SDL3::SDL3 glm::glm spdlog::spdlog)
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+if (EMSCRIPTEN)
+  target_include_directories(MuClient PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/XDL_wgpu/include")
+  target_link_libraries(MuClient PUBLIC XDL_wgpu SDL3::SDL3 glm::glm spdlog::spdlog)
+else()
+  target_link_libraries(MuClient PUBLIC SDL3::SDL3 glm::glm spdlog::spdlog)
+endif()
+if (NOT EMSCRIPTEN)
+  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MU_LINK_SDL_PLATFORM_BACKENDS)
   # SDL also dlopen()s libvulkan.so.1; the same option makes it a DT_NEEDED entry of Main
   # (linked below) so the loader resolves through the RUNPATH.
@@ -312,6 +347,9 @@ else()
   target_link_libraries(MuCryptopp INTERFACE "${MU_CRYPTOPP_STATIC_LIBRARY}")
 endif()
 target_link_libraries(MuClient PRIVATE MuCryptopp)
+else()
+  target_compile_definitions(MuClient PRIVATE MU_NO_OPENSSL=1 MU_NO_CRYPTOPP=1)
+endif()
 if(TARGET SDL3_ttf::SDL3_ttf)
   target_link_libraries(MuClient PUBLIC SDL3_ttf::SDL3_ttf)
 endif()
@@ -340,9 +378,13 @@ target_compile_definitions(MuClient PUBLIC
   RMLUI_SDL_GPU_NUM_MSAA_SAMPLES=${RMLUI_SDL_GPU_NUM_MSAA_SAMPLES}
 )
 
-# The in-game shop downloader uses libcurl on every platform.
-find_package(CURL REQUIRED)
-target_link_libraries(MuClient PUBLIC CURL::libcurl)
+# The in-game shop downloader uses libcurl on desktop.
+if (NOT EMSCRIPTEN)
+  find_package(CURL REQUIRED)
+  target_link_libraries(MuClient PUBLIC CURL::libcurl)
+else()
+  target_compile_definitions(MuClient PRIVATE MU_NO_CURL=1)
+endif()
 
 # The engine relies on self-registering globals whose constructors get
 # silently dropped if the linker only pulls archive members on demand, so
@@ -368,7 +410,11 @@ add_library(MuClient::MuClient ALIAS MuClient_whole)
 # (the engine uses fixed-function desktop OpenGL), so quietly compiling a
 # desktop main() for them would be wrong. iOS is matched before the generic
 # APPLE/macOS branch, and Android before the generic UNIX/Linux branch.
-if (WIN32)
+if (EMSCRIPTEN)
+  set(MU_APP_ENTRY
+    "source/App/Platform/Linux/main.cpp"
+    "source/App/Platform/Windows/Winmain.cpp")
+elseif (WIN32)
   set(MU_APP_ENTRY "source/App/Platform/Windows/Winmain.cpp")
 elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
   message(FATAL_ERROR "iOS is not a supported build target yet: it needs an "
@@ -417,7 +463,11 @@ else()
   )
 endif()
 target_compile_features(Main PUBLIC cxx_std_20)
-target_link_libraries(Main PRIVATE MuClient::MuClient)
+if (EMSCRIPTEN)
+  target_link_libraries(Main PRIVATE XDL_wgpu MuClient::MuClient)
+else()
+  target_link_libraries(Main PRIVATE MuClient::MuClient)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MU_LINK_SDL_PLATFORM_BACKENDS)
   target_link_libraries(Main PRIVATE Vulkan::Vulkan)
 endif()
@@ -456,7 +506,27 @@ if (MSVC AND MU_REPORT_DEAD_SYMBOLS)
   )
 endif()
 
-if (NOT MSVC)
+if (EMSCRIPTEN)
+  set_target_properties(Main PROPERTIES SUFFIX ".html")
+  target_link_options(Main PRIVATE
+    "--use-port=emdawnwebgpu"
+    "-sASYNCIFY"
+    "-sASYNCIFY_STACK_SIZE=1048576"
+    "-sSTACK_SIZE=16777216"
+    "--profiling-funcs"
+    "-Wl,--trace-symbol=SDL_CreateGPUDevice"
+    "-sWASM=1"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sINITIAL_MEMORY=1073741824"
+    "-sMAXIMUM_MEMORY=2147483648"
+    "-sNO_DISABLE_EXCEPTION_CATCHING"
+    "-lwebsocket.js"
+    "-sFORCE_FILESYSTEM=1"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,stringToUTF8"
+  )
+endif()
+
+if (NOT MSVC AND NOT EMSCRIPTEN)
   set(MU_MAIN_MAP_FILE "${CMAKE_CURRENT_BINARY_DIR}/Main.map")
   if (APPLE)
     target_link_options(Main PRIVATE "-Wl,-map,${MU_MAIN_MAP_FILE}")
@@ -575,9 +645,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_program(DOTNET_EXECUTABLE dotnet.exe)
   endif()
 else()
-  find_program(DOTNET_EXECUTABLE dotnet.exe)
+  find_program(DOTNET_EXECUTABLE dotnet.exe HINTS "$ENV{USERPROFILE}/.local/dotnet" "$ENV{DOTNET_ROOT}")
   if (NOT DOTNET_EXECUTABLE)
-    find_program(DOTNET_EXECUTABLE dotnet)
+    find_program(DOTNET_EXECUTABLE dotnet HINTS "$ENV{USERPROFILE}/.local/dotnet" "$ENV{DOTNET_ROOT}")
   endif()
 endif()
 
@@ -785,7 +855,9 @@ if (DOTNET_EXECUTABLE)
   # and only need a working dotnet on the host - so gate the ClientLibrary
   # step separately rather than clearing DOTNET_EXECUTABLE altogether.
   set(DOTNET_CAN_BUILD_CLIENT_LIBRARY TRUE)
-  if (NOT DOTNET_EXECUTABLE MATCHES "\\.exe$" AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  if (EMSCRIPTEN)
+    set(DOTNET_CAN_BUILD_CLIENT_LIBRARY FALSE)
+  elseif (NOT DOTNET_EXECUTABLE MATCHES "\\.exe$" AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
     message(WARNING "Found Linux dotnet but target is Windows. "
       "Cross-OS Native AOT is not supported. MUnique.Client.Library.dll will NOT be built. "
       "Install the Windows .NET SDK or use WSL interop (dotnet.exe) to enable.")
@@ -1014,7 +1086,7 @@ if (DOTNET_EXECUTABLE)
   # It needs the .NET runtime, which building the client needs anyway. The
   # InGameTests target plays the scenarios, InGameTestsGui opens its window:
   #   cmake --build <build dir> --config Release --target InGameTests
-  if (ENABLE_IN_GAME_TESTS)
+  if (ENABLE_IN_GAME_TESTS AND NOT EMSCRIPTEN)
     set(MU_IN_GAME_TEST_SERVER "127.0.0.1:56901" CACHE STRING
       "Game server the InGameTests target logs the clients in to, host:port; default the test server")
     option(MU_IN_GAME_TEST_FRESH_SERVER

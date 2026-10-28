@@ -12,6 +12,7 @@
 #include "Engine/Object/ZzzOpenData.h"
 #include "Scenes/TitleSceneUI.h"
 #include "UI/Core/WindowSystem.h"
+#include "Render/Renderer/MuRenderer.h"
 
 // External declarations
 extern EGameScene SceneFlag;
@@ -122,10 +123,16 @@ void WebzenScene(HDC hDC)
 
     ::EnableAlphaTest();
     {
+#ifdef __EMSCRIPTEN__
+        mu::GetRenderer().CancelFrame();
+#endif
         // The game draws no cursor while it loads.
         const Core::Platform::ScopedSystemCursor cursor;
         OpenBasicData(hDC);
         g_pNewUISystem->LoadMainSceneInterface();
+#ifdef __EMSCRIPTEN__
+        mu::GetRenderer().BeginFrame();
+#endif
         TitleSceneUI::RenderSceneUI(hDC, 11, 11);
     }
 

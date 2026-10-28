@@ -253,6 +253,9 @@ void MoveCamera()
 
 void CreateLogInScene()
 {
+#ifdef __EMSCRIPTEN__
+    mu::GetRenderer().CancelFrame();
+#endif
     EnableMainRender = true;
     gMapManager.WorldActive = WD_73NEW_LOGIN_SCENE;
 
@@ -295,6 +298,9 @@ void CreateLogInScene()
     ::PlayMp3(MUSIC_LOGIN_THEME);
 
     g_ErrorReport.Write(L"> Login Scene init success.\r\n");
+#ifdef __EMSCRIPTEN__
+    mu::GetRenderer().BeginFrame();
+#endif
 }
 
 void NewMoveLogInScene()

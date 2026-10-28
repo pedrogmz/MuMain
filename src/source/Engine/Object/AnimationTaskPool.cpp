@@ -13,6 +13,9 @@ AnimationTaskPool& AnimationTaskPool::Instance()
 
 void AnimationTaskPool::Initialize(size_t threadCount)
 {
+#ifdef __EMSCRIPTEN__
+    return;
+#else
     if (m_running) return;
 
     if (threadCount == 0)
@@ -39,6 +42,7 @@ void AnimationTaskPool::Initialize(size_t threadCount)
     {
         m_workers.emplace_back(&AnimationTaskPool::WorkerLoop, this, i);
     }
+#endif
 }
 
 void AnimationTaskPool::Shutdown()

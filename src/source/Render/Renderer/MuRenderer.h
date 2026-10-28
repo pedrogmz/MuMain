@@ -395,6 +395,7 @@ public:
     // Per-frame lifecycle. Called from the MuMain.cpp game loop.
     virtual void BeginFrame() {}
     virtual void EndFrame() {}
+    virtual void CancelFrame() {}
     virtual void SetStatsEnabled(bool /*enabled*/) {}
     [[nodiscard]] virtual RendererStats GetFrameStats() const
     {

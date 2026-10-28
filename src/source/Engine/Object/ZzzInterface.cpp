@@ -3106,6 +3106,14 @@ void MoveHero()
     // click landing on one -- COptionWindow being the concrete case that surfaced this -- fell
     // through and moved the character instead of being consumed by the window. IsMouseOverUI()
     // queries RmlUi's own hover chain directly, sidestepping that per-window bookkeeping.
+#ifdef __EMSCRIPTEN__
+    extern bool g_bWndActive;
+    if (MouseLButtonPush || MouseLButton)
+    {
+        fprintf(stderr, "[MoveHero] click check: push=%d held=%d mouseOnWin=%d checkMouseUse=%d isOverUI=%d active=%d\n",
+                (int)MouseLButtonPush, (int)MouseLButton, (int)MouseOnWindow, (int)g_pNewUISystem->CheckMouseUse(), (int)Core::Input::IsMouseOverUI(), (int)g_bWndActive);
+    }
+#endif
     if (!MouseOnWindow && false == g_pNewUISystem->CheckMouseUse() && !Core::Input::IsMouseOverUI())
     {
         bool Success = false;

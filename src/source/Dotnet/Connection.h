@@ -30,8 +30,10 @@ class PacketFunctions_ClientToServer;
 // g_dotnetLibPath is defined — causing dlopen("") and a NULL handle.
 inline std::string ManagedLibraryPath()
 {
+#ifdef __EMSCRIPTEN__
+    return "wasm-network";
+#elif defined(_WIN32)
     const auto libraryName = "MUnique.Client.Library" + std::string(MU_DOTNET_LIB_EXT);
-#ifdef _WIN32
     return libraryName;
 #else
     constexpr DWORD executablePathCapacity = 4096;
@@ -64,6 +66,9 @@ bool IsManagedLibraryAvailable();
 
 template <typename T> T LoadManagedSymbol(const char* name)
 {
+#ifdef __EMSCRIPTEN__
+    return nullptr;
+#else
     if (!IsManagedLibraryAvailable())
     {
         return nullptr;
@@ -76,6 +81,7 @@ template <typename T> T LoadManagedSymbol(const char* name)
     }
 
     return symbol;
+#endif
 }
 } // namespace DotNetBridge
 
@@ -83,6 +89,7 @@ using DotNetBridge::LoadManagedSymbol;
 
 // Register native services required by the managed bridge.
 void InitializeDotNetBridge();
+void Connection_SendRaw(int32_t handle, const BYTE* data, int32_t size);
 
 class Connection
 {

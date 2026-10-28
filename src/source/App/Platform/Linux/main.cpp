@@ -12,15 +12,30 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nC
 
 int main(int argc, char* argv[])
 {
-    std::string commandLine;
-    for (int index = 1; index < argc; ++index)
+    try
     {
-        if (!commandLine.empty())
+        std::string commandLine;
+        for (int index = 1; index < argc; ++index)
         {
-            commandLine += ' ';
+            if (!commandLine.empty())
+            {
+                commandLine += ' ';
+            }
+            commandLine += argv[index];
         }
-        commandLine += argv[index];
-    }
 
-    return WinMain(nullptr, nullptr, commandLine.data(), SW_SHOW);
+        return WinMain(nullptr, nullptr, commandLine.data(), SW_SHOW);
+    }
+    catch (const std::exception& ex)
+    {
+        fprintf(stderr, "[MuMain FATAL EXCEPTION] %s\n", ex.what());
+        fflush(stderr);
+        return 1;
+    }
+    catch (...)
+    {
+        fprintf(stderr, "[MuMain FATAL UNKNOWN EXCEPTION]\n");
+        fflush(stderr);
+        return 1;
+    }
 }

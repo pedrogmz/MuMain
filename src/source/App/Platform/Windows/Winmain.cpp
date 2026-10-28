@@ -48,6 +48,9 @@
 #include "Core/Time/FrameTimerScheduler.h"
 #include "Core/Utilities/FrameProfiler.h"
 #include "Core/Utilities/Benchmark/BenchRecorder.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <SDL3/SDL.h>
 #include "Render/Models/ZzzBMD.h"
 #include "Engine/Object/ZzzInfomation.h"
@@ -1023,8 +1026,12 @@ namespace
 {
 bool InputDiagnosticsEnabled()
 {
+#ifdef __EMSCRIPTEN__
+    return true;
+#else
     static const bool enabled = std::getenv("MU_INPUT_DIAGNOSTICS") != nullptr;
     return enabled;
+#endif
 }
 
 struct WindowScaleMetrics
@@ -1093,6 +1100,10 @@ void HandleMouseButton(const SDL_Event& e)
 {
     HandleMouseMotion(e.button.x, e.button.y);
     const bool down = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+#ifdef __EMSCRIPTEN__
+    fprintf(stderr, "[InputDiag] HandleMouseButton: btn=%d down=%d raw=(%.1f,%.1f) logical=(%d,%d) active=%d\n",
+            e.button.button, (int)down, e.button.x, e.button.y, MouseX, MouseY, (int)g_bWndActive);
+#endif
     if (InputDiagnosticsEnabled())
     {
         const WindowScaleMetrics metrics = ReadWindowScaleMetrics();
@@ -1428,6 +1439,11 @@ bool RouteActionInput(SDL_Event& event, bool synthetic, bool& propagates)
         if (!synthetic && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
             Core::Input::Synthetic::CancelForPhysicalButton(event.button.button);
         propagates = Core::Input::RouteToUi(event, g_sdlWindow);
+#ifdef __EMSCRIPTEN__
+        fprintf(stderr, "[InputDiag] RouteActionInput: %s btn=%d raw=(%.1f,%.1f) propagates=%d synthetic=%d active=%d\n",
+                event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "DOWN" : "UP",
+                event.button.button, event.button.x, event.button.y, (int)propagates, (int)synthetic, (int)g_bWndActive);
+#endif
         if (propagates && !synthetic)
             HandleMouseButton(event);
         return true;
@@ -1461,17 +1477,8 @@ bool RouteActionInput(SDL_Event& event, bool synthetic, bool& propagates)
     }
 }
 
-MSG MainLoop()
+void MainLoopIteration(bool usePreciseSleep)
 {
-    constexpr auto target_resolution = 1;
-    auto precise = timeBeginPeriod(target_resolution);
-
-    HandleFocusChange(Core::Platform::HasSDLWindowInputFocus(SDL_GetWindowFlags(g_sdlWindow)));
-    Core::Input::Synthetic::SetEventDelivery([](SDL_Event& event, bool& propagates)
-                                             { return RouteActionInput(event, true, propagates); }, g_sdlWindow);
-
-    while (!Destroy)
-    {
         SDL_Event event;
         int messageProcessed = 0;
 
@@ -1644,10 +1651,55 @@ MSG MainLoop()
         {
             // SDL_PollEvent above already drained pending events, so just pace
             // the frame.
-            WaitForNextActivity(precise == TIMERR_NOERROR);
+            #ifndef __EMSCRIPTEN__
+            WaitForNextActivity(usePreciseSleep);
+#endif
         }
 
-    } // while (!Destroy)
+
+}
+
+#ifdef __EMSCRIPTEN__
+static void EmscriptenFrame()
+{
+    if (Destroy)
+    {
+        emscripten_cancel_main_loop();
+        return;
+    }
+    MainLoopIteration(false);
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+extern "C" EMSCRIPTEN_KEEPALIVE void MuWebSetWindowActive(int active)
+{
+    fprintf(stderr, "[MuWebSetWindowActive] called active=%d (current g_bWndActive=%d)\n", active, (int)g_bWndActive);
+    HandleFocusChange(active != 0);
+}
+#endif
+
+MSG MainLoop()
+{
+    constexpr auto target_resolution = 1;
+    auto precise = timeBeginPeriod(target_resolution);
+
+#ifdef __EMSCRIPTEN__
+    HandleFocusChange(true);
+#else
+    HandleFocusChange(Core::Platform::HasSDLWindowInputFocus(SDL_GetWindowFlags(g_sdlWindow)));
+#endif
+    Core::Input::Synthetic::SetEventDelivery([](SDL_Event& event, bool& propagates)
+                                             { return RouteActionInput(event, true, propagates); }, g_sdlWindow);
+
+#ifdef __EMSCRIPTEN__
+    emscripten_set_main_loop(EmscriptenFrame, 0, 1);
+    return MSG{};
+#else
+    while (!Destroy)
+    {
+        MainLoopIteration(precise == TIMERR_NOERROR);
+    }
 
     Core::Input::Synthetic::SetEventDelivery(nullptr, nullptr);
     if (precise == TIMERR_NOERROR)
@@ -1656,6 +1708,7 @@ MSG MainLoop()
     }
 
     return MSG{};
+#endif
 }
 
 namespace
@@ -2429,7 +2482,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nC
     g_pUIMapName = new CUIMapName; // rozy
 
     g_BuffSystem = BuffStateSystem::Make();
+#ifndef __EMSCRIPTEN__
     AnimationTaskPool::Instance().Initialize();
+#endif
 
     g_MapProcess = MapProcess::Make();
 
@@ -2460,9 +2515,14 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nC
     // Opened only when the launcher set the path; silent otherwise.
     App::Control::ControlServer::Instance().Start(Core::Text::ToUtf8(lpszExeVersion));
 
+#ifndef __EMSCRIPTEN__
     std::thread cpuUsageRecorder(RecordCpuUsage);
     const MSG msg = MainLoop();
     ShutdownRuntime(cpuUsageRecorder, sdlLogOutput);
 
     return msg.wParam;
+#else
+    MainLoop();
+    return 0;
+#endif
 }

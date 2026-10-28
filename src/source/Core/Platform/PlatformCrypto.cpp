@@ -2,6 +2,22 @@
 
 #include "Core/Platform/PlatformCrypto.h"
 
+#ifdef MU_NO_OPENSSL
+bool mu_encrypt_blob(const void* input, std::size_t inputSize, std::vector<std::uint8_t>& output)
+{
+    const auto* data = static_cast<const std::uint8_t*>(input);
+    output.assign(data, data + inputSize);
+    return true;
+}
+
+bool mu_decrypt_blob(const void* input, std::size_t inputSize, std::vector<std::uint8_t>& output)
+{
+    const auto* data = static_cast<const std::uint8_t*>(input);
+    output.assign(data, data + inputSize);
+    return true;
+}
+#else
+
 #include <array>
 #include <climits>
 #include <cstring>
@@ -156,3 +172,5 @@ bool mu_decrypt_blob(const void* input, std::size_t inputSize, std::vector<std::
     output.resize(decryptedSize + finalSize);
     return true;
 }
+
+#endif

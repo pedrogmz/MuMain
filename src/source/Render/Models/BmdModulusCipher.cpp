@@ -1,5 +1,15 @@
 #include "BmdModulusCipher.h"
 
+#ifdef MU_NO_CRYPTOPP
+namespace Render::Models::BmdModulusCipher
+{
+bool DecryptInPlace(std::uint8_t* payload, std::size_t size)
+{
+    return false;
+}
+}
+#else
+
 #include <cryptopp/3way.h>
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/cast.h>
@@ -128,3 +138,5 @@ bool Render::Models::BmdModulusCipher::DecryptInPlace(std::uint8_t* payload, std
     }
     return true;
 }
+
+#endif

@@ -13,7 +13,7 @@ get_filename_component(PATCH_FILE "${PATCH_FILE}" ABSOLUTE)
 find_package(Git REQUIRED)
 
 execute_process(
-    COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero --check "${PATCH_FILE}"
+    COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero --ignore-whitespace --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${SOURCE_DIR}"
     RESULT_VARIABLE forward_result
     OUTPUT_VARIABLE forward_output
@@ -21,7 +21,7 @@ execute_process(
 )
 if(forward_result EQUAL 0)
     execute_process(
-        COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero "${PATCH_FILE}"
+        COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero --ignore-whitespace "${PATCH_FILE}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE apply_result
         OUTPUT_VARIABLE apply_output
@@ -34,7 +34,7 @@ if(forward_result EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero --reverse --check "${PATCH_FILE}"
+    COMMAND "${GIT_EXECUTABLE}" apply --unidiff-zero --ignore-whitespace --reverse --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${SOURCE_DIR}"
     RESULT_VARIABLE reverse_result
     OUTPUT_VARIABLE reverse_output

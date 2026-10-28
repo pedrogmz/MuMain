@@ -15,11 +15,16 @@
 #include "PacketFunctions_CommonEnums.h"
 #include "PacketFunctions_ConnectServer_Enums.h"
 #include "PacketFunctions_ConnectServer.h"
+#include "Connection.h"
 #include "PacketBindings_ConnectServer.h"
 
 
 void PacketFunctions_ConnectServer::SendConnectionInfoRequest075(BYTE serverId)
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[5] = { 0xC1, 0x05, 0xF4, 0x03, serverId };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendConnectionInfoRequest075 = LoadManagedSymbol<::SendConnectionInfoRequest075>("SendConnectionInfoRequest075");
     if (!dotnet_SendConnectionInfoRequest075)
     {
@@ -27,10 +32,15 @@ void PacketFunctions_ConnectServer::SendConnectionInfoRequest075(BYTE serverId)
     }
 
     dotnet_SendConnectionInfoRequest075(this->GetHandle(), serverId);
+#endif
 }
 
 void PacketFunctions_ConnectServer::SendConnectionInfoRequest(uint16_t serverId)
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[6] = { 0xC1, 0x06, 0xF4, 0x03, static_cast<BYTE>(serverId & 0xFF), static_cast<BYTE>((serverId >> 8) & 0xFF) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendConnectionInfoRequest = LoadManagedSymbol<::SendConnectionInfoRequest>("SendConnectionInfoRequest");
     if (!dotnet_SendConnectionInfoRequest)
     {
@@ -38,6 +48,7 @@ void PacketFunctions_ConnectServer::SendConnectionInfoRequest(uint16_t serverId)
     }
 
     dotnet_SendConnectionInfoRequest(this->GetHandle(), serverId);
+#endif
 }
 
 void PacketFunctions_ConnectServer::SendConnectionInfo(const char16_t* ipAddress, uint16_t port)
@@ -53,6 +64,10 @@ void PacketFunctions_ConnectServer::SendConnectionInfo(const char16_t* ipAddress
 
 void PacketFunctions_ConnectServer::SendServerListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF4, 0x06 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendServerListRequest = LoadManagedSymbol<::SendServerListRequest>("SendServerListRequest");
     if (!dotnet_SendServerListRequest)
     {
@@ -60,10 +75,15 @@ void PacketFunctions_ConnectServer::SendServerListRequest()
     }
 
     dotnet_SendServerListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ConnectServer::SendServerListRequestOld()
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF4, 0x02 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendServerListRequestOld = LoadManagedSymbol<::SendServerListRequestOld>("SendServerListRequestOld");
     if (!dotnet_SendServerListRequestOld)
     {
@@ -71,10 +91,15 @@ void PacketFunctions_ConnectServer::SendServerListRequestOld()
     }
 
     dotnet_SendServerListRequestOld(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ConnectServer::SendHello()
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[4] = { 0xC1, 0x04, 0x00, 0x01 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendHello = LoadManagedSymbol<::SendHello>("SendHello");
     if (!dotnet_SendHello)
     {
@@ -82,6 +107,7 @@ void PacketFunctions_ConnectServer::SendHello()
     }
 
     dotnet_SendHello(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ConnectServer::SendPatchCheckRequest(BYTE majorVersion, BYTE minorVersion, BYTE patchVersion)

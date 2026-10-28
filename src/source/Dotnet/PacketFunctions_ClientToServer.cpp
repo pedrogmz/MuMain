@@ -16,10 +16,21 @@
 #include "PacketFunctions_ClientToServer_Enums.h"
 #include "PacketFunctions_ClientToServer.h"
 #include "PacketBindings_ClientToServer.h"
+#include "Connection.h"
 
 
 void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attackSpeed)
 {
+#ifdef __EMSCRIPTEN__
+    BYTE packet[12] = { 0xC3, 0x0C, 0x0E, 0x00 };
+    packet[4] = static_cast<BYTE>(tickCount & 0xFF);
+    packet[5] = static_cast<BYTE>((tickCount >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((tickCount >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((tickCount >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>(attackSpeed & 0xFF);
+    packet[9] = static_cast<BYTE>((attackSpeed >> 8) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPing = LoadManagedSymbol<::SendPing>("SendPing");
     if (!dotnet_SendPing)
     {
@@ -27,6 +38,7 @@ void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attac
     }
 
     dotnet_SendPing(this->GetHandle(), tickCount, attackSpeed);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChecksumResponse(uint32_t checksum)
@@ -1010,6 +1022,10 @@ void PacketFunctions_ClientToServer::SendAnimationRequest(BYTE rotation, BYTE an
 
 void PacketFunctions_ClientToServer::SendRequestCharacterList(BYTE language)
 {
+#ifdef __EMSCRIPTEN__
+    const BYTE packet[5] = { 0xC1, 0x05, 0xF3, 0x00, language };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRequestCharacterList = LoadManagedSymbol<::SendRequestCharacterList>("SendRequestCharacterList");
     if (!dotnet_SendRequestCharacterList)
     {
@@ -1017,6 +1033,7 @@ void PacketFunctions_ClientToServer::SendRequestCharacterList(BYTE language)
     }
 
     dotnet_SendRequestCharacterList(this->GetHandle(), language);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCreateCharacter(const char16_t* name, CharacterClassNumber class_)
@@ -1043,6 +1060,17 @@ void PacketFunctions_ClientToServer::SendDeleteCharacter(const char16_t* name, c
 
 void PacketFunctions_ClientToServer::SendSelectCharacter(const char16_t* name)
 {
+#ifdef __EMSCRIPTEN__
+    BYTE packet[14] = { 0xC1, 0x0E, 0xF3, 0x03 };
+    if (name)
+    {
+        for (int i = 0; i < 10 && name[i]; ++i)
+        {
+            packet[4 + i] = static_cast<BYTE>(name[i] & 0xFF);
+        }
+    }
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSelectCharacter = LoadManagedSymbol<::SendSelectCharacter>("SendSelectCharacter");
     if (!dotnet_SendSelectCharacter)
     {
@@ -1050,10 +1078,22 @@ void PacketFunctions_ClientToServer::SendSelectCharacter(const char16_t* name)
     }
 
     dotnet_SendSelectCharacter(this->GetHandle(), name);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFocusCharacter(const char16_t* name)
 {
+#ifdef __EMSCRIPTEN__
+    BYTE packet[14] = { 0xC1, 0x0E, 0xF3, 0x15 };
+    if (name)
+    {
+        for (int i = 0; i < 10 && name[i]; ++i)
+        {
+            packet[4 + i] = static_cast<BYTE>(name[i] & 0xFF);
+        }
+    }
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFocusCharacter = LoadManagedSymbol<::SendFocusCharacter>("SendFocusCharacter");
     if (!dotnet_SendFocusCharacter)
     {
@@ -1061,6 +1101,7 @@ void PacketFunctions_ClientToServer::SendFocusCharacter(const char16_t* name)
     }
 
     dotnet_SendFocusCharacter(this->GetHandle(), name);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendIncreaseCharacterStatPoint(CharacterStatAttribute statType)

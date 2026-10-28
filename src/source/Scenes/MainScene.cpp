@@ -145,10 +145,13 @@ static void InitializeMainScene()
     MU_LOG_DEBUG(mu::log::Get("network"), "SendRequestJoinMapServer");
 
     CurrentProtocolState = REQUEST_JOIN_MAP_SERVER;
-    SocketClient->ToGameServer()->SendSelectCharacter(MU_C16(CharactersClient[SelectedHero].ID));
+    const wchar_t* selectedName = (CharactersClient[SelectedHero].ID[0] != L'\0')
+        ? CharactersClient[SelectedHero].ID
+        : CharacterAttribute->Name;
+    SocketClient->ToGameServer()->SendSelectCharacter(MU_C16(selectedName));
 
     // Remember which character is in play so auto-reconnect can re-select it.
-    ReconnectManager::Instance().CacheCharacter(CharactersClient[SelectedHero].ID);
+    ReconnectManager::Instance().CacheCharacter(selectedName);
 
     CSceneUICoordinator::Instance().CreateMainScene();
 

@@ -22,6 +22,9 @@
 // SDL3 is a required project dependency, so these includes are unconditional.
 #include <optional>
 #include <SDL3/SDL_gpu.h>
+#ifdef __EMSCRIPTEN__
+#include <XDL_wgpu.h>
+#endif
 #include <SDL3/SDL.h>
 #if __has_include(<SDL3_ttf/SDL_ttf.h>)
 #include <SDL3_ttf/SDL_ttf.h>
@@ -201,6 +204,12 @@ static_assert(sizeof(FogUniform) == 48, "FogUniform must be 48 bytes (HLSL cbuff
     {
         ext = "msl";
     }
+#ifdef __EMSCRIPTEN__
+    else if (driver && std::string(driver) == "webgpu")
+    {
+        ext = "wgsl";
+    }
+#endif
 
 #ifndef MU_SHADER_DIR
 #define MU_SHADER_DIR ""
@@ -235,6 +244,12 @@ static_assert(sizeof(FogUniform) == 48, "FogUniform must be 48 bytes (HLSL cbuff
     {
         return SDL_GPU_SHADERFORMAT_MSL;
     }
+#ifdef __EMSCRIPTEN__
+    if (driver && std::string(driver) == "webgpu")
+    {
+        return SDL_GPU_SHADERFORMAT_WGSL;
+    }
+#endif
     return SDL_GPU_SHADERFORMAT_SPIRV;
 }
 
@@ -1774,17 +1789,19 @@ public:
         mu::log::Get("render")->info("SDL_gpu -- validation: {}, requested backend: {}",
                                      Render::kGpuValidationEnabled ? "enabled" : "disabled",
                                      requestedDriverName ? requestedDriverName : "(SDL auto-pick)");
+        SDL_GPUShaderFormat shaderFormats =
+            SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+#ifdef __EMSCRIPTEN__
+        shaderFormats |= SDL_GPU_SHADERFORMAT_WGSL;
+#endif
         s_device =
-            SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
-                                Render::kGpuValidationEnabled, requestedDriverName);
+            SDL_CreateGPUDevice(shaderFormats, Render::kGpuValidationEnabled, requestedDriverName);
 
         if (!s_device && requestedDriverName != nullptr)
         {
             mu::log::Get("render")->warn("SDL_gpu -- '{}' device creation failed ({}), falling back to "
                                          "SDL's own auto-picked driver", requestedDriverName, SDL_GetError());
-            s_device = SDL_CreateGPUDevice(
-                SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
-                Render::kGpuValidationEnabled, nullptr);
+            s_device = SDL_CreateGPUDevice(shaderFormats, Render::kGpuValidationEnabled, nullptr);
         }
 
         if (!s_device)
@@ -2094,6 +2111,7 @@ public:
     // -----------------------------------------------------------------------
     void BeginFrame() override
     {
+        if (s_frameActive) return;
         if (!s_device || !s_window)
         {
             FailPendingFrameReadback();
@@ -2120,6 +2138,11 @@ public:
 
         // F-7 fix: Cache window dimensions once per frame for text Y-flip.
         SDL_GetWindowSize(s_window, &s_cachedWinW, &s_cachedWinH);
+        if (s_cachedWinW <= 0 || s_cachedWinH <= 0)
+        {
+            s_cachedWinW = 1280;
+            s_cachedWinH = 720;
+        }
 
         // Reset vertex scratch offset, deferred command list, and per-frame diagnostics.
         // Texture uploads may be queued by legacy asset loading before BeginFrame,
@@ -2202,6 +2225,12 @@ public:
             s_cmdBuf = nullptr;
             FailPendingFrameReadback();
             return;
+        }
+
+        if (s_swapW > 0 && s_swapH > 0)
+        {
+            s_cachedWinW = static_cast<int>(s_swapW);
+            s_cachedWinH = static_cast<int>(s_swapH);
         }
 
         // If swapchain texture is null, skip the frame: a hidden window, or on Vulkan a minimized one whose
@@ -3190,6 +3219,18 @@ public:
             mu::log::Get("render")->warn(
                 "10 frames elapsed with zero draw calls; game may not be calling RenderQuad2D/RenderTriangles");
         }
+    }
+
+    void CancelFrame() override
+    {
+        if (s_cmdBuf)
+        {
+            SDL_CancelGPUCommandBuffer(s_cmdBuf);
+            s_cmdBuf = nullptr;
+        }
+        s_frameActive = false;
+        s_swapchainTexture = nullptr;
+        s_renderCmds.clear();
     }
 
     [[nodiscard]] bool RequestFramePixels() override

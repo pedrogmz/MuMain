@@ -23,12 +23,15 @@
 // MEDIUM-4 fix: g_dotnetLibPath defined here (not in anonymous namespace in header) to prevent
 // per-TU copies if Connection.h is ever included by a second translation unit.
 // Declaration (extern) remains in Connection.h; only Connection.cpp includes Connection.h today.
+#ifdef __EMSCRIPTEN__
+const std::string g_dotnetLibPath = "wasm-network";
+const mu::platform::LibraryHandle munique_client_library_handle = nullptr;
+#else
 const std::string g_dotnetLibPath = ManagedLibraryPath();
 
-// Defined after g_dotnetLibPath so C++ TU initialization order guarantees the path is
-// fully constructed before Load() is called. (SIOF fix — was inline in Connection.h)
 const mu::platform::LibraryHandle munique_client_library_handle =
     mu::platform::Load(g_dotnetLibPath.c_str());
+#endif
 
 namespace
 {
@@ -72,6 +75,9 @@ using SetManagedLogCallback = void(CORECLR_DELEGATE_CALLTYPE*)(ManagedLogCallbac
 
 void InitializeDotNetBridge()
 {
+#ifdef __EMSCRIPTEN__
+    mu::log::Get("dotnet")->info("NET: InitializeDotNetBridge -- WASM WebSocket bridge active");
+#else
     if (!munique_client_library_handle)
     {
         mu::log::Get("dotnet")->error("NET: InitializeDotNetBridge -- library not loaded, skipping");
@@ -84,6 +90,7 @@ void InitializeDotNetBridge()
     {
         setManagedLogCallback(&WriteManagedLog);
     }
+#endif
 }
 
 std::map<int32_t, Connection*> connections;
@@ -140,14 +147,17 @@ void ReportDotNetError(const char* detail, DotNetErrorKind kind)
 
 bool IsManagedLibraryAvailable()
 {
+#ifdef __EMSCRIPTEN__
+    return true;
+#else
     if (munique_client_library_handle)
     {
         return true;
     }
 
-    // AC-1: Pass library path; ReportDotNetError will use g_dotnetLibPath and platform name
     ReportDotNetError(nullptr, DotNetErrorKind::LibraryNotFound);
     return false;
+#endif
 }
 } // namespace DotNetBridge
 
@@ -161,6 +171,163 @@ typedef void(CORECLR_DELEGATE_CALLTYPE* Disconnect)(int32_t);
 typedef void(CORECLR_DELEGATE_CALLTYPE* BeginReceive)(int32_t);
 typedef void(CORECLR_DELEGATE_CALLTYPE* Send)(int32_t, const BYTE*, int32_t);
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/websocket.h>
+
+namespace
+{
+struct WasmConnectionState
+{
+    int32_t handle = 0;
+    EMSCRIPTEN_WEBSOCKET_T ws = 0;
+    bool isConnected = false;
+    onPacketReceived* packetCallback = nullptr;
+    onDisconnected* disconnectCallback = nullptr;
+};
+
+std::map<int32_t, WasmConnectionState> g_wasmConnections;
+int32_t g_nextWasmHandle = 1;
+
+EM_BOOL OnWsOpen(int eventType, const EmscriptenWebSocketOpenEvent* websocketEvent, void* userData)
+{
+    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
+    mu::log::Get("dotnet")->info("NET [WASM]: WebSocket opened, handle={}", handle);
+    auto it = g_wasmConnections.find(handle);
+    if (it != g_wasmConnections.end())
+    {
+        it->second.isConnected = true;
+    }
+    return EM_TRUE;
+}
+
+EM_BOOL OnWsClose(int eventType, const EmscriptenWebSocketCloseEvent* websocketEvent, void* userData)
+{
+    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
+    mu::log::Get("dotnet")->info("NET [WASM]: WebSocket closed, handle={}, code={}, reason={}",
+                                 handle, websocketEvent->code, websocketEvent->reason);
+    auto it = g_wasmConnections.find(handle);
+    if (it != g_wasmConnections.end())
+    {
+        it->second.isConnected = false;
+        if (it->second.disconnectCallback)
+        {
+            it->second.disconnectCallback(handle);
+        }
+        g_wasmConnections.erase(it);
+    }
+    return EM_TRUE;
+}
+
+EM_BOOL OnWsError(int eventType, const EmscriptenWebSocketErrorEvent* websocketEvent, void* userData)
+{
+    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
+    mu::log::Get("dotnet")->error("NET [WASM]: WebSocket error on handle={}", handle);
+    return EM_TRUE;
+}
+
+EM_BOOL OnWsMessage(int eventType, const EmscriptenWebSocketMessageEvent* websocketEvent, void* userData)
+{
+    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
+    if (!websocketEvent->isText && websocketEvent->numBytes > 0)
+    {
+        auto it = g_wasmConnections.find(handle);
+        if (it != g_wasmConnections.end() && it->second.packetCallback)
+        {
+            it->second.packetCallback(handle, websocketEvent->numBytes, const_cast<BYTE*>(websocketEvent->data));
+        }
+    }
+    return EM_TRUE;
+}
+
+int32_t CORECLR_DELEGATE_CALLTYPE Wasm_Connect(const char16_t* host, int32_t port, BYTE isEncrypted,
+                                              onPacketReceived onReceived, onDisconnected onDisc)
+{
+    if (!emscripten_websocket_is_supported())
+    {
+        mu::log::Get("dotnet")->error("NET [WASM]: WebSockets not supported in browser!");
+        return -1;
+    }
+
+    const int32_t handle = g_nextWasmHandle++;
+
+    std::string hostStr;
+    if (host)
+    {
+        for (const char16_t* p = host; *p; ++p)
+        {
+            hostStr += static_cast<char>(*p);
+        }
+    }
+    if (hostStr.empty() || hostStr == "localhost")
+    {
+        hostStr = "127.0.0.1";
+    }
+
+    // openmu-browser-stack proxy is on port 7100
+    std::string wsUrl = "ws://" + hostStr + ":7100";
+
+    EmscriptenWebSocketCreateAttributes wsAttrs;
+    emscripten_websocket_init_create_attributes(&wsAttrs);
+    wsAttrs.url = wsUrl.c_str();
+
+    mu::log::Get("dotnet")->info("NET [WASM]: Connecting WebSocket to {} (handle={}, targetPort={})",
+                                 wsUrl, handle, port);
+
+    EMSCRIPTEN_WEBSOCKET_T ws = emscripten_websocket_new(&wsAttrs);
+    if (ws <= 0)
+    {
+        mu::log::Get("dotnet")->error("NET [WASM]: Failed to create WebSocket for {}", wsUrl);
+        return -1;
+    }
+
+    void* userData = reinterpret_cast<void*>(static_cast<intptr_t>(handle));
+    emscripten_websocket_set_onopen_callback(ws, userData, OnWsOpen);
+    emscripten_websocket_set_onclose_callback(ws, userData, OnWsClose);
+    emscripten_websocket_set_onerror_callback(ws, userData, OnWsError);
+    emscripten_websocket_set_onmessage_callback(ws, userData, OnWsMessage);
+
+    WasmConnectionState state;
+    state.handle = handle;
+    state.ws = ws;
+    state.isConnected = true;
+    state.packetCallback = onReceived;
+    state.disconnectCallback = onDisc;
+
+    g_wasmConnections[handle] = state;
+    return handle;
+}
+
+void CORECLR_DELEGATE_CALLTYPE Wasm_Send(int32_t handle, const BYTE* data, int32_t size)
+{
+    auto it = g_wasmConnections.find(handle);
+    if (it != g_wasmConnections.end() && it->second.ws > 0)
+    {
+        emscripten_websocket_send_binary(it->second.ws, const_cast<void*>(static_cast<const void*>(data)), size);
+    }
+}
+
+void CORECLR_DELEGATE_CALLTYPE Wasm_Disconnect(int32_t handle)
+{
+    auto it = g_wasmConnections.find(handle);
+    if (it != g_wasmConnections.end() && it->second.ws > 0)
+    {
+        emscripten_websocket_close(it->second.ws, 1000, "Normal closure");
+        it->second.ws = 0;
+        it->second.isConnected = false;
+        g_wasmConnections.erase(it);
+    }
+}
+
+void CORECLR_DELEGATE_CALLTYPE Wasm_BeginReceive(int32_t handle)
+{
+}
+} // namespace
+
+Connect GetConnect() { return &Wasm_Connect; }
+Disconnect GetDisconnect() { return &Wasm_Disconnect; }
+BeginReceive GetBeginReceive() { return &Wasm_BeginReceive; }
+Send GetSend() { return &Wasm_Send; }
+#else
 Connect GetConnect()
 {
     static const auto function = LoadManagedSymbol<Connect>("ConnectionManager_Connect");
@@ -184,6 +351,7 @@ Send GetSend()
     static const auto function = LoadManagedSymbol<Send>("ConnectionManager_Send");
     return function;
 }
+#endif
 } // anonymous namespace
 
 void Connection::OnPacketReceivedS(const int32_t handle, const int32_t size, BYTE* data)
@@ -324,3 +492,72 @@ void Connection::OnPacketReceived(const BYTE* data, const int32_t size)
     }
     this->_packetHandler(this->_handle, data, size);
 }
+
+
+void Connection_SendRaw(int32_t handle, const BYTE* data, int32_t size)
+{
+    const auto it = connections.find(handle);
+    if (it != connections.end() && it->second != nullptr)
+    {
+        it->second->Send(data, size);
+    }
+#ifdef __EMSCRIPTEN__
+    else
+    {
+        Wasm_Send(handle, data, size);
+    }
+#endif
+}
+
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include "UI/Windows/ServerSelWin.h"
+#include "UI/Windows/LoginWin.h"
+#include "Scenes/CharacterScene.h"
+#include "Scenes/SceneCommon.h"
+
+extern int CurrentProtocolState;
+extern int SelectedCharacter;
+
+namespace Scenes {
+    bool StartGameWithSlot(int slot);
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE
+int MuWeb_GetProtocolState()
+{
+    return CurrentProtocolState;
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool MuWeb_SelectServer(int serverIndex)
+{
+    mu::log::Get("dotnet")->info("NET [WASM]: MuWeb_SelectServer called, index={}", serverIndex);
+    return g_ServerSelWin.SelectServer(nullptr, serverIndex);
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool MuWeb_SubmitLogin(const char* username, const char* password)
+{
+    mu::log::Get("dotnet")->info("NET [WASM]: MuWeb_SubmitLogin called for user={}", username ? username : "null");
+    if (!username || !password) return false;
+    std::wstring wUser(username, username + strlen(username));
+    std::wstring wPass(password, password + strlen(password));
+    g_LoginWin.SubmitCredentials(wUser.c_str(), wPass.c_str());
+    return true;
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool MuWeb_EnterWorld(int heroIndex)
+{
+    mu::log::Get("dotnet")->info("NET [WASM]: MuWeb_EnterWorld called, heroIndex={}", heroIndex);
+    SelectedCharacter = heroIndex;
+    SelectedHero = heroIndex;
+    return Scenes::StartGameWithSlot(heroIndex);
+}
+
+} // extern "C"
+#endif

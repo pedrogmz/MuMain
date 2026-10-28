@@ -145,6 +145,28 @@ void TitleSceneUI::ReleaseSceneUI()
 
 void TitleSceneUI::RenderSceneUI(HDC hDC, DWORD dwNow, DWORD dwTotal)
 {
+#ifdef __EMSCRIPTEN__
+    ::BeginOpengl();
+    mu::GetRenderer().ClearScreen();
+    ::BeginBitmap();
+
+    for (int i = 0; i < UIM_TS_MAX; ++i)
+    {
+        if (i == 2)
+            continue;
+        s_asprTitle[i].Render();
+    }
+
+    if (s_pGaugeFill)
+    {
+        s_pGaugeFill->SetMax(static_cast<float>(dwTotal));
+        s_pGaugeFill->SetValue(static_cast<float>(dwNow));
+    }
+
+    ::EndBitmap();
+    ::EndOpengl();
+    return;
+#endif
     // Each loading update gets its own frame so the progress bar is visible.
     // When called inside the game loop, temporarily close the caller frame,
     // present this loading update, then reopen the caller frame.
