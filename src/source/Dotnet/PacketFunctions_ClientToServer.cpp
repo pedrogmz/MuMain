@@ -978,6 +978,29 @@ void PacketFunctions_ClientToServer::SendPartyInviteResponse(BYTE accepted, uint
 
 void PacketFunctions_ClientToServer::SendWalkRequest(BYTE sourceX, BYTE sourceY, BYTE stepCount, BYTE targetRotation, const BYTE* directions, uint32_t directionsByteLength)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the walk request is written here. The C1
+    // packet is a 6-byte header followed by the packed path directions, which
+    // SendCharacterMove caps at 8 bytes.
+    constexpr uint32_t MaxDirectionsLength = 8;
+    const uint32_t directionsLength =
+        directionsByteLength > MaxDirectionsLength ? MaxDirectionsLength : directionsByteLength;
+
+    BYTE packet[6 + MaxDirectionsLength] = {
+        0xC1,
+        static_cast<BYTE>(6 + directionsLength),
+        0xD4,
+        sourceX,
+        sourceY,
+        static_cast<BYTE>((stepCount & 0x0F) | ((targetRotation & 0x0F) << 4)),
+    };
+    for (uint32_t i = 0; i < directionsLength; ++i)
+    {
+        packet[6 + i] = directions[i];
+    }
+
+    Connection_SendRaw(this->GetHandle(), packet, static_cast<int>(6 + directionsLength));
+#else
     static const auto dotnet_SendWalkRequest = LoadManagedSymbol<::SendWalkRequest>("SendWalkRequest");
     if (!dotnet_SendWalkRequest)
     {
@@ -985,6 +1008,7 @@ void PacketFunctions_ClientToServer::SendWalkRequest(BYTE sourceX, BYTE sourceY,
     }
 
     dotnet_SendWalkRequest(this->GetHandle(), sourceX, sourceY, stepCount, targetRotation, directions, directionsByteLength);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWalkRequest075(BYTE sourceX, BYTE sourceY, BYTE stepCount, BYTE targetRotation, const BYTE* directions, uint32_t directionsByteLength)
