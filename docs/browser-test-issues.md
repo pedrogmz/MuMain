@@ -20,7 +20,7 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 | ID | Título | Área | Severidad | Estado |
 |----|--------|------|-----------|--------|
 | BUG-001 | No hay recarga automática de vida | Cliente / servidor | Media | Abierto |
-| BUG-002 | La tecla `M` no abre el mapa de transporte | Cliente (input/UI) | Media | Abierto |
+| BUG-002 | El menú de mapa (`M`) abre, pero al pulsar un mapa no teletransporta | Cliente (protocolo/UI) | Media | Corregido (pendiente de probar) |
 | BUG-003 | No se envían mensajes por el chat | Cliente (input/red) | Alta | Corregido (pendiente de probar) |
 | BUG-004 | El botón `+` de estadísticas no sube puntos | Cliente (UI/red) | Alta | Corregido (pendiente de probar) |
 | BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/red) | Alta | Corregido (pendiente de probar) |
@@ -58,31 +58,51 @@ valor.
 `src/source/Network/Server/WSclient.cpp` (`ReceiveStatsExtended`, `ReceiveRevival`).
 Servidor: configuración/plugin de regeneración de OpenMU (fuera de este repo).
 
-## BUG-002 — La tecla `M` no abre el mapa de transporte
+## BUG-002 — El menú de mapa (`M`) abre, pero al pulsar un mapa no teletransporta
 
-**Síntomas.** Pulsar `M` en el juego no abre la ventana de movimiento/transporte.
+**Síntomas.** La tecla `M` sí abre la ventana de movimiento/transporte, pero al
+hacer clic sobre cualquier mapa la ventana se cierra y el personaje no se mueve.
 
-**Pasos.** Entrar al mundo y pulsar `M`.
+**Pasos.** Entrar al mundo, pulsar `M`, hacer clic sobre un mapa permitido.
 
-**Esperado.** Se alterna `INTERFACE_MOVEMAP` (ventana `move_command.rml`).
+**Esperado.** El cliente envía `WarpCommandRequest`; el servidor cobra el zen,
+comprueba el nivel y teletransporta al personaje.
 
-**Actual.** No ocurre nada.
+**Actual (antes del arreglo).** La fila es clicable y la ventana se cierra, pero
+el servidor nunca recibe la petición y no ocurre nada.
 
-**Pistas / hipótesis.**
+**Causa raíz.** `SendWarpCommandRequest` no tenía rama nativa para Emscripten y
+era un no-op silencioso. Se confirmó con `proxy.log`: no aparecía ningún
+`C1 0A 8E 02` al pulsar un mapa.
 
-- El atajo está en `src/source/UI/HUD/HotKey.cpp`:
-  - ~150: caso de duel watch.
-  - ~289: `IsPress('M')` → `Toggle(INTERFACE_MOVEMAP)`.
-- La ventana se registra en `src/source/UI/Core/WindowSystem.cpp` (~597,
-  `move_command.rml`) y se implementa en `src/source/UI/HUD/MoveCommandWindow.cpp`.
-- Puede ser que el evento de teclado no llegue al cliente en WASM (el mismo tipo
-  de problema que vimos al intentar abrir el inventario con una tecla sintética),
-  que `CanUpdateKeyEvent()` devuelva `false`, o que la ventana no tenga datos de
-  mapas (`src/source/Network/MoveCommandData.cpp`).
+**Arreglo.** Se añadió una rama `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` con el formato de
+`WarpCommandRequest` (`C1HeaderWithSubCode`, longitud 10):
 
-**Archivos probablemente implicados.**
-`src/source/UI/HUD/HotKey.cpp`, `src/source/UI/HUD/MoveCommandWindow.cpp`,
-`src/source/UI/Core/WindowSystem.cpp`, `src/source/Network/MoveCommandData.cpp`.
+```
+C1 0A 8E 02 <CommandKey LE 4 bytes> <WarpInfoIndex LE 2 bytes>
+```
+
+OpenMU ignora `CommandKey` y usa `WarpInfoIndex` para buscar la entrada en su
+`WarpList`. La misma función se usa en el comando de chat `/warp`.
+
+También se añadió `SendEnterGateRequest` (`C3 08 1C 00 <GateNumber LE>
+<TeleportTargetX> <TeleportTargetY>`), que comparte el mismo problema: era un
+no-op y se usa al cruzar puertas de mapa y en el teletransporte del mago.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo con el cliente
+recargado: al seleccionar un mapa debe aparecer `c1 0a 8e 02 ...` en
+`proxy.log` y el servidor debe mover al personaje. Si el paquete sale pero el
+servidor responde `UnknownWarpIndex`, habría que comparar los índices de
+`MoveReq` del cliente con el `WarpList` de OpenMU (configuración del servidor).
+
+**Archivos implicados.**
+`src/source/UI/HUD/MoveCommandWindow.cpp` (`RmlClickWarp`),
+`src/source/UI/HUD/ChatInputBox.cpp` (comando `/warp`),
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendWarpCommandRequest`, `SendEnterGateRequest`),
+`src/source/Network/MoveCommandData.cpp`.
 
 ## BUG-003 — No se envían mensajes por el chat
 
@@ -469,12 +489,13 @@ cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
 `nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007), el
 movimiento de items (BUG-005), la interacción con NPCs (BUG-008), las acciones
 de sus tiendas (BUG-009), el chat público (BUG-003), los puntos de estadísticas
-(BUG-004) y el logout (BUG-006). Antes de tocar la UI conviene comprobar en
-`proxy.log` si el paquete sale o no: si no sale, el problema está en el bridge,
-no en el botón.
+(BUG-004), el logout (BUG-006) y los teletransportes de mapa (BUG-002). Antes de
+tocar la UI conviene comprobar en `proxy.log` si el paquete sale o no: si no
+sale, el problema está en el bridge, no en el botón.
 
 ## Prioridad sugerida
 
-1. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
-   el paquete de regeneración llegue y que el input de teclado llegue al canvas.
-   Ninguno de los dos es un problema del bridge de paquetes.
+1. **BUG-001**: regeneración de HP; primero comprobar en `proxy.log` si el
+   servidor envía actualizaciones de stats (`C3 26` / `C3 F3 06`) y con qué
+   valores, para descartar que sea un problema del cliente. No es un problema
+   del bridge de paquetes.

@@ -463,6 +463,23 @@ void PacketFunctions_ClientToServer::SendRepairItemRequest(BYTE itemSlot, BYTE i
 
 void PacketFunctions_ClientToServer::SendWarpCommandRequest(uint32_t commandKey, uint16_t warpInfoIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the warp request is written here. OpenMU
+    // ignores the command key and uses WarpInfoIndex only.
+    const BYTE packet[10] = {
+        0xC1,
+        0x0A,
+        0x8E,
+        0x02,
+        static_cast<BYTE>(commandKey & 0xFF),
+        static_cast<BYTE>((commandKey >> 8) & 0xFF),
+        static_cast<BYTE>((commandKey >> 16) & 0xFF),
+        static_cast<BYTE>((commandKey >> 24) & 0xFF),
+        static_cast<BYTE>(warpInfoIndex & 0xFF),
+        static_cast<BYTE>((warpInfoIndex >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendWarpCommandRequest = LoadManagedSymbol<::SendWarpCommandRequest>("SendWarpCommandRequest");
     if (!dotnet_SendWarpCommandRequest)
     {
@@ -470,10 +487,26 @@ void PacketFunctions_ClientToServer::SendWarpCommandRequest(uint32_t commandKey,
     }
 
     dotnet_SendWarpCommandRequest(this->GetHandle(), commandKey, warpInfoIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterGateRequest(uint16_t gateNumber, BYTE teleportTargetX, BYTE teleportTargetY)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the gate request is written here. Byte 3 is
+    // padding between the C3 header and the little-endian gate number.
+    const BYTE packet[8] = {
+        0xC3,
+        0x08,
+        0x1C,
+        0x00,
+        static_cast<BYTE>(gateNumber & 0xFF),
+        static_cast<BYTE>((gateNumber >> 8) & 0xFF),
+        teleportTargetX,
+        teleportTargetY,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEnterGateRequest = LoadManagedSymbol<::SendEnterGateRequest>("SendEnterGateRequest");
     if (!dotnet_SendEnterGateRequest)
     {
@@ -481,6 +514,7 @@ void PacketFunctions_ClientToServer::SendEnterGateRequest(uint16_t gateNumber, B
     }
 
     dotnet_SendEnterGateRequest(this->GetHandle(), gateNumber, teleportTargetX, teleportTargetY);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterGateRequest075(BYTE gateNumber, BYTE teleportTargetX, BYTE teleportTargetY)
