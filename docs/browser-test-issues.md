@@ -27,6 +27,7 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 | BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Abierto |
 | BUG-007 | NPCs y monstruos de Lorencia no aparecen (spawn correcto en servidor) | Cliente (protocolo/viewport) | Alta | Corregido |
 | BUG-008 | Al hacer clic en un NPC no se abre el diálogo ni ocurre ninguna acción | Cliente (protocolo/NPC) | Alta | Corregido (pendiente de probar) |
+| BUG-009 | Comprar, vender, reparar o pedir buff a un NPC no hace nada | Cliente (protocolo/NPC) | Alta | Corregido (pendiente de probar) |
 
 ## BUG-001 — No hay recarga automática de vida
 
@@ -328,11 +329,12 @@ cliente recargado: al hacer clic en un NPC debe aparecer `c3 05 30 ...` en
 `proxy.log` y el servidor debe responder con `c3 0b 30 ...`
 (`NpcWindowResponse`) o el diálogo de quest, momento en que se abre la ventana.
 
-**Pendiente relacionado.** Las acciones dentro de esos diálogos siguen siendo
-no-ops en WASM: `SendBuyItemFromNpcRequest` (`C3 32`), `SendSellItemToNpcRequest`
-(`C3 33`), `SendRepairItemRequest` (`C1 34`) y `SendNpcBuffRequest` (`C1 04 F6 31`).
-Es decir, la ventana ya se abre, pero comprar/vender/reparar/pedir buff todavía
-no envía nada. Debería tratarse como un bug aparte (ver prioridad sugerida).
+**Pendiente relacionado.** En el momento de este arreglo, las acciones dentro de
+esos diálogos seguían siendo no-ops en WASM: `SendBuyItemFromNpcRequest`
+(`C3 32`), `SendSellItemToNpcRequest` (`C3 33`), `SendRepairItemRequest`
+(`C1 34`) y `SendNpcBuffRequest` (`C1 04 F6 31`). Es decir, la ventana ya se
+abría, pero comprar/vender/reparar/pedir buff todavía no enviaba nada. Corregido
+después en BUG-009.
 
 **Archivos implicados.**
 `src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
@@ -340,6 +342,56 @@ no envía nada. Debería tratarse como un bug aparte (ver prioridad sugerida).
 `src/source/Engine/Object/ZzzInterface.cpp` (selección del NPC y `MOVEMENT_TALK`),
 `src/source/Network/Server/WSclient.cpp` (`ReceiveTalk`,
 `ReceiveNPCDlgUIStart`).
+
+## BUG-009 — Comprar, vender, reparar o pedir buff a un NPC no hace nada
+
+**Síntomas.** Con la ventana del NPC ya abierta (BUG-008 corregido), al pulsar
+comprar, vender, reparar o pedir el buff del NPC soldado, la acción no envía
+nada: no se mueve zen, no cambia el inventario y no aparece el buff.
+
+**Pasos.** Hablar con un mercader de Lorencia, intentar comprar y vender un item;
+hablar con el herrero y reparar; hablar con el NPC soldado y pedir el buff.
+
+**Esperado.** El cliente envía la petición correspondiente y el servidor responde
+con `ItemBought` / `NpcItemSellResult` / el resultado de reparación o el buff,
+actualizando el inventario y el zen.
+
+**Actual (antes del arreglo).** Los botones no hacen nada porque las cuatro
+funciones seguían siendo no-ops en WASM (`LoadManagedSymbol` devuelve `nullptr`).
+
+**Causa raíz.** La misma de BUG-003 a BUG-008: faltaban las ramas nativas
+`#ifdef __EMSCRIPTEN__` para los paquetes de acciones de NPC.
+
+**Arreglo.** Se añadieron ramas `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` con los formatos de
+`ClientToServerPackets.xml`:
+
+- `SendBuyItemFromNpcRequest` → `C3 04 32 <ItemSlot>`
+- `SendSellItemToNpcRequest` → `C3 04 33 <ItemSlot>`
+- `SendRepairItemRequest` → `C1 05 34 <ItemSlot> <IsSelfRepair>`
+- `SendNpcBuffRequest` → `C1 04 F6 31`
+
+`IsSelfRepair` se escribe tal cual lo pasa el cliente (la UI usa `0` al reparar
+desde la ventana del NPC y `1` al reparar desde el inventario). El paquete de
+reparación también cubre `ItemSlot = 0xFF` (reparar todo) y la reparación de la
+mascota, que el servidor valida según el NPC abierto.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo en una sesión con el
+cliente recargado, buscando en `proxy.log`:
+
+- compra: `c3 04 32 ...` y respuesta `c3 ... 32` (`ItemBought`);
+- venta: `c3 04 33 ...` y respuesta `c3 ... 33` (`NpcItemSellResult`);
+- reparación: `c1 05 34 ...` y respuesta `c1 ... 34` (`ItemRepaired`);
+- buff: `c1 04 f6 31`.
+
+**Archivos implicados.**
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendBuyItemFromNpcRequest`, `SendSellItemToNpcRequest`,
+`SendRepairItemRequest`, `SendNpcBuffRequest`),
+`src/source/UI/NPCs/NPCShop.cpp`,
+`src/source/UI/Inventory/InventoryActionController.cpp`,
+`src/source/GameLogic/NPCs/npcBreeder.cpp`.
 
 ## Cómo reproducir y capturar tráfico
 
@@ -351,13 +403,13 @@ no envía nada. Debería tratarse como un bug aparte (ver prioridad sugerida).
 4. Para pruebas deterministas, el proyecto tiene un socket de control y pruebas
    in-game: ver `docs/control-socket.md` y `docs/in-game-tests.md`.
 
-## Causa común de BUG-003 a BUG-008
+## Causa común de BUG-003 a BUG-009
 
 La misma limitación que causaba BUG-007 afecta a casi todos los paquetes
 cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
 `nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007), el
-movimiento de items (BUG-005) y la interacción con NPCs (BUG-008). Chat, puntos
-de estadísticas, logout y las acciones de las tiendas de NPC usan el mismo
+movimiento de items (BUG-005), la interacción con NPCs (BUG-008) y las acciones
+de sus tiendas (BUG-009). Chat, puntos de estadísticas y logout usan el mismo
 patrón y necesitan una rama nativa `#ifdef __EMSCRIPTEN__`. Antes de tocar la UI
 conviene comprobar en `proxy.log` si el paquete sale o no: si no sale, el
 problema está en el bridge, no en el botón.
@@ -366,10 +418,7 @@ problema está en el bridge, no en el botón.
 
 1. **BUG-003 y BUG-004**: serializadores nativos de `PublicChatMessage`
    (C1 `0x00`) e `IncreaseCharacterStatPoint` (C3 `F3 06`).
-2. **Acciones de NPC**: `BuyItemFromNpcRequest` (C3 `32`),
-   `SellItemToNpcRequest` (C3 `33`) y `RepairItemRequest` (C1 `34`), que siguen
-   siendo no-ops aunque el diálogo ya se abra (ver BUG-008).
-3. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
+2. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
    revisar aparte el cierre de ventana de Exit Game.
-4. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
+3. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
    el paquete de regeneración llegue y que el input de teclado llegue al canvas.

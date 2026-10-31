@@ -352,6 +352,11 @@ void PacketFunctions_ClientToServer::SendCloseNpcRequest()
 
 void PacketFunctions_ClientToServer::SendBuyItemFromNpcRequest(BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the buy request is written here.
+    const BYTE packet[4] = { 0xC3, 0x04, 0x32, itemSlot };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendBuyItemFromNpcRequest = LoadManagedSymbol<::SendBuyItemFromNpcRequest>("SendBuyItemFromNpcRequest");
     if (!dotnet_SendBuyItemFromNpcRequest)
     {
@@ -359,10 +364,16 @@ void PacketFunctions_ClientToServer::SendBuyItemFromNpcRequest(BYTE itemSlot)
     }
 
     dotnet_SendBuyItemFromNpcRequest(this->GetHandle(), itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSellItemToNpcRequest(BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the sell request is written here.
+    const BYTE packet[4] = { 0xC3, 0x04, 0x33, itemSlot };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSellItemToNpcRequest = LoadManagedSymbol<::SendSellItemToNpcRequest>("SendSellItemToNpcRequest");
     if (!dotnet_SendSellItemToNpcRequest)
     {
@@ -370,10 +381,16 @@ void PacketFunctions_ClientToServer::SendSellItemToNpcRequest(BYTE itemSlot)
     }
 
     dotnet_SendSellItemToNpcRequest(this->GetHandle(), itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRepairItemRequest(BYTE itemSlot, BYTE isSelfRepair)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the repair request is written here.
+    const BYTE packet[5] = { 0xC1, 0x05, 0x34, itemSlot, isSelfRepair };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRepairItemRequest = LoadManagedSymbol<::SendRepairItemRequest>("SendRepairItemRequest");
     if (!dotnet_SendRepairItemRequest)
     {
@@ -381,6 +398,7 @@ void PacketFunctions_ClientToServer::SendRepairItemRequest(BYTE itemSlot, BYTE i
     }
 
     dotnet_SendRepairItemRequest(this->GetHandle(), itemSlot, isSelfRepair);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWarpCommandRequest(uint32_t commandKey, uint16_t warpInfoIndex)
@@ -1978,6 +1996,11 @@ void PacketFunctions_ClientToServer::SendAvailableQuestsRequest()
 
 void PacketFunctions_ClientToServer::SendNpcBuffRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the NPC buff request is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF6, 0x31 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendNpcBuffRequest = LoadManagedSymbol<::SendNpcBuffRequest>("SendNpcBuffRequest");
     if (!dotnet_SendNpcBuffRequest)
     {
@@ -1985,6 +2008,7 @@ void PacketFunctions_ClientToServer::SendNpcBuffRequest()
     }
 
     dotnet_SendNpcBuffRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterEmpireGuardianEvent(BYTE itemSlot)
