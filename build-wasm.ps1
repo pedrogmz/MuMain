@@ -24,7 +24,19 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "=== Compilation Successful ===" -ForegroundColor Green
 
-if ($RebuildAssets -or !(Test-Path "out\build\wasm-web\src\Main.data")) {
+$mainData = "out\build\wasm-web\src\Main.data"
+$shaderStage = "out\build\wasm-web\shaders"
+$vfsNeedsRebuild = $RebuildAssets -or -not (Test-Path $mainData)
+if (-not $vfsNeedsRebuild -and (Test-Path $shaderStage)) {
+    # The VFS is preloaded once; deploy new or changed shader blobs without
+    # forcing a full 700 MB repack on every build that did not touch them.
+    $mainDataTime = (Get-Item $mainData).LastWriteTimeUtc
+    $vfsNeedsRebuild = [bool](Get-ChildItem $shaderStage -File -Recurse |
+        Where-Object { $_.LastWriteTimeUtc -gt $mainDataTime } |
+        Select-Object -First 1)
+}
+
+if ($vfsNeedsRebuild) {
     Write-Host "=== Packaging VFS Assets (Data, fonts, shaders, config.ini) ===" -ForegroundColor Cyan
     python C:\Users\Poisson\emsdk\upstream\emscripten\tools\file_packager.py out\build\wasm-web\src\Main.data `
       --preload "out\build\wasm-web\shaders@shaders" `

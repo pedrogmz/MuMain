@@ -26,8 +26,10 @@ add_compile_definitions(MU_SHADER_DIR="${MU_SHADER_OUTPUT_DIR}/")
 file(MAKE_DIRECTORY "${MU_SHADER_OUTPUT_DIR}")
 
 set(MU_SHADER_BLOB_DIR "${MU_SHADER_COMPILED_DIR}")
+set(MU_SHADER_WGSL_DIR "${MU_SHADER_COMPILED_DIR}")
 include("${MU_SHADER_VALIDATION_SCRIPT}")
 unset(MU_SHADER_BLOB_DIR)
+unset(MU_SHADER_WGSL_DIR)
 
 if(MU_ENABLE_SHADER_COMPILATION)
     foreach(shader_tool_variable IN ITEMS GLSLANG_EXE SPIRV_CROSS_EXE DXC_EXE)
@@ -146,11 +148,28 @@ else()
         configure_file("${source_blob}" "${staged_blob}" COPYONLY)
         list(APPEND MU_SHADER_BLOBS "${staged_blob}")
     endforeach()
+
+    # The browser build loads WGSL from the VFS. Native builds keep using the
+    # .spv/.msl/.dxil blobs, so only stage the WGSL sources for Emscripten.
+    if(EMSCRIPTEN)
+        foreach(wgsl_name IN LISTS MU_SHADER_WGSL_NAMES)
+            configure_file(
+                "${MU_SHADER_COMPILED_DIR}/${wgsl_name}"
+                "${MU_SHADER_OUTPUT_DIR}/${wgsl_name}"
+                COPYONLY)
+        endforeach()
+    endif()
+endif()
+
+set(MU_STAGED_SHADER_WGSL_DIR)
+if(EMSCRIPTEN AND NOT MU_ENABLE_SHADER_COMPILATION)
+    set(MU_STAGED_SHADER_WGSL_DIR "${MU_SHADER_OUTPUT_DIR}")
 endif()
 
 add_custom_target(ValidateStagedShaderBlobs ALL
     COMMAND "${CMAKE_COMMAND}"
         "-DMU_SHADER_BLOB_DIR=${MU_SHADER_OUTPUT_DIR}"
+        "-DMU_SHADER_WGSL_DIR=${MU_STAGED_SHADER_WGSL_DIR}"
         -P "${MU_SHADER_VALIDATION_SCRIPT}"
     DEPENDS ${MU_SHADER_BLOBS} "${MU_SHADER_VALIDATION_SCRIPT}"
     COMMENT "Validating staged shader blobs"
