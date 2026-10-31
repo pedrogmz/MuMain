@@ -26,6 +26,7 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 | BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/red) | Alta | Corregido (pendiente de probar) |
 | BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Abierto |
 | BUG-007 | NPCs y monstruos de Lorencia no aparecen (spawn correcto en servidor) | Cliente (protocolo/viewport) | Alta | Corregido |
+| BUG-008 | Al hacer clic en un NPC no se abre el diálogo ni ocurre ninguna acción | Cliente (protocolo/NPC) | Alta | Corregido (pendiente de probar) |
 
 ## BUG-001 — No hay recarga automática de vida
 
@@ -277,6 +278,69 @@ Los spawns del servidor se comprobaron en la base de datos
 `ReceiveCreateTransformViewport`),
 `src/source/Engine/Object/ZzzCharacter.cpp` (`CreateMonster`).
 
+## BUG-008 — Al hacer clic en un NPC no se abre el diálogo ni ocurre ninguna acción
+
+**Síntomas.** Al hacer clic sobre un NPC (por ejemplo Lumen o Baz en Lorencia) el
+héroe camina hasta él, pero no se abre la ventana de diálogo, tienda o baúl, y no
+ocurre ninguna acción.
+
+**Pasos.** Entrar al mundo, hacer clic sobre un NPC y esperar a que el héroe
+llegue a su lado.
+
+**Esperado.** El cliente envía `TalkToNpcRequest`; el servidor responde con
+`NpcWindowResponse` (C3 `0x30`) o con el diálogo de quest, y el cliente abre la
+ventana correspondiente.
+
+**Actual (antes del arreglo).** El héroe se acerca al NPC pero el servidor nunca
+recibe la petición, así que no responde y no se abre nada.
+
+**Causa raíz.** La misma que BUG-003 a BUG-007: en WASM `LoadManagedSymbol`
+devuelve `nullptr`, y `SendTalkToNpcRequest` y `SendCloseNpcRequest` no tenían
+rama nativa, por lo que eran no-ops silenciosos. Se confirmó con `proxy.log`
+(sesión del 2026-10-31 hasta las 03:03): el tráfico C→S solo contenía pings
+(`C3 0C 0E`), walk requests (`C1 07/08/09 D4`) y movimientos de item
+(`C3 07 24`); no aparecía ningún `C3 05 30` (talk) ni `C1 03 31` (close) aunque
+el personaje se movió junto a los NPCs.
+
+**Arreglo.** Se añadieron ramas `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`:
+
+- `SendTalkToNpcRequest` escribe el paquete C3 (5 bytes) con el id del NPC como
+  short big-endian:
+
+  ```
+  C3 05 30 <NpcId alto> <NpcId bajo>
+  ```
+
+- `SendCloseNpcRequest` escribe el paquete C1 (3 bytes), necesario para que el
+  servidor cierre el diálogo y el jugador pueda volver a hablar con el NPC:
+
+  ```
+  C1 03 31
+  ```
+
+Ambos formatos coinciden con las definiciones `TalkToNpcRequest` (longitud 5) y
+`CloseNpcRequest` (longitud 3) de `ClientToServerPackets.xml`.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo en una sesión con el
+cliente recargado: al hacer clic en un NPC debe aparecer `c3 05 30 ...` en
+`proxy.log` y el servidor debe responder con `c3 0b 30 ...`
+(`NpcWindowResponse`) o el diálogo de quest, momento en que se abre la ventana.
+
+**Pendiente relacionado.** Las acciones dentro de esos diálogos siguen siendo
+no-ops en WASM: `SendBuyItemFromNpcRequest` (`C3 32`), `SendSellItemToNpcRequest`
+(`C3 33`), `SendRepairItemRequest` (`C1 34`) y `SendNpcBuffRequest` (`C1 04 F6 31`).
+Es decir, la ventana ya se abre, pero comprar/vender/reparar/pedir buff todavía
+no envía nada. Debería tratarse como un bug aparte (ver prioridad sugerida).
+
+**Archivos implicados.**
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendTalkToNpcRequest`, `SendCloseNpcRequest`),
+`src/source/Engine/Object/ZzzInterface.cpp` (selección del NPC y `MOVEMENT_TALK`),
+`src/source/Network/Server/WSclient.cpp` (`ReceiveTalk`,
+`ReceiveNPCDlgUIStart`).
+
 ## Cómo reproducir y capturar tráfico
 
 1. Levantar el stack y el cliente (ver `openmu-browser-stack/README.md`).
@@ -287,21 +351,25 @@ Los spawns del servidor se comprobaron en la base de datos
 4. Para pruebas deterministas, el proyecto tiene un socket de control y pruebas
    in-game: ver `docs/control-socket.md` y `docs/in-game-tests.md`.
 
-## Causa común de BUG-003 a BUG-006
+## Causa común de BUG-003 a BUG-008
 
 La misma limitación que causaba BUG-007 afecta a casi todos los paquetes
 cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
-`nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007) y el
-movimiento de items (BUG-005). Chat, puntos de estadísticas y logout usan el
-mismo patrón y necesitan una rama nativa `#ifdef __EMSCRIPTEN__`. Antes de tocar
-la UI conviene comprobar en `proxy.log` si el paquete sale o no: si no sale, el
+`nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007), el
+movimiento de items (BUG-005) y la interacción con NPCs (BUG-008). Chat, puntos
+de estadísticas, logout y las acciones de las tiendas de NPC usan el mismo
+patrón y necesitan una rama nativa `#ifdef __EMSCRIPTEN__`. Antes de tocar la UI
+conviene comprobar en `proxy.log` si el paquete sale o no: si no sale, el
 problema está en el bridge, no en el botón.
 
 ## Prioridad sugerida
 
 1. **BUG-003 y BUG-004**: serializadores nativos de `PublicChatMessage`
    (C1 `0x00`) e `IncreaseCharacterStatPoint` (C3 `F3 06`).
-2. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
+2. **Acciones de NPC**: `BuyItemFromNpcRequest` (C3 `32`),
+   `SellItemToNpcRequest` (C3 `33`) y `RepairItemRequest` (C1 `34`), que siguen
+   siendo no-ops aunque el diálogo ya se abra (ver BUG-008).
+3. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
    revisar aparte el cierre de ventana de Exit Game.
-3. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
+4. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
    el paquete de regeneración llegue y que el input de teclado llegue al canvas.

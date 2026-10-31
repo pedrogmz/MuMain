@@ -311,6 +311,18 @@ void PacketFunctions_ClientToServer::SendConsumeItemRequest075(BYTE itemSlot, BY
 
 void PacketFunctions_ClientToServer::SendTalkToNpcRequest(uint16_t npcId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the talk request is written here. The C3
+    // packet carries the NPC id as a big-endian short.
+    const BYTE packet[5] = {
+        0xC3,
+        0x05,
+        0x30,
+        static_cast<BYTE>((npcId >> 8) & 0xFF),
+        static_cast<BYTE>(npcId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTalkToNpcRequest = LoadManagedSymbol<::SendTalkToNpcRequest>("SendTalkToNpcRequest");
     if (!dotnet_SendTalkToNpcRequest)
     {
@@ -318,10 +330,16 @@ void PacketFunctions_ClientToServer::SendTalkToNpcRequest(uint16_t npcId)
     }
 
     dotnet_SendTalkToNpcRequest(this->GetHandle(), npcId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCloseNpcRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, closing the NPC dialog is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x31 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCloseNpcRequest = LoadManagedSymbol<::SendCloseNpcRequest>("SendCloseNpcRequest");
     if (!dotnet_SendCloseNpcRequest)
     {
@@ -329,6 +347,7 @@ void PacketFunctions_ClientToServer::SendCloseNpcRequest()
     }
 
     dotnet_SendCloseNpcRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendBuyItemFromNpcRequest(BYTE itemSlot)
