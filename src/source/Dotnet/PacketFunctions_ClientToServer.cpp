@@ -19,6 +19,61 @@
 #include "PacketBindings_ClientToServer.h"
 #include "Connection.h"
 
+#ifdef __EMSCRIPTEN__
+namespace
+{
+constexpr unsigned char Utf8ContinuationMask = 0xC0;
+constexpr unsigned char Utf8ContinuationBits = 0x80;
+
+// Returns the length of the text clamped to maxLength bytes without cutting a
+// multi-byte UTF-8 character.
+std::size_t Utf8LengthAtMost(const std::string& text, std::size_t maxLength)
+{
+    if (text.size() <= maxLength)
+    {
+        return text.size();
+    }
+
+    std::size_t length = maxLength;
+    while (length > 0 &&
+           (static_cast<unsigned char>(text[length]) & Utf8ContinuationMask) == Utf8ContinuationBits)
+    {
+        --length;
+    }
+    return length;
+}
+
+// Writes a C1 chat packet: header, 10-byte name field, UTF-8 message and a null
+// terminator, like the managed PublicChatMessage and WhisperMessage packets.
+void SendChatPacket(int32_t handle, BYTE code, const char16_t* name, const char16_t* message)
+{
+    constexpr std::size_t NameFieldLength = 10;
+    constexpr std::size_t HeaderLength = 3 + NameFieldLength;
+    constexpr std::size_t MaxPacketLength = 0xFF;
+    // The length is one byte, and the message needs a terminator.
+    constexpr std::size_t MaxMessageLength = MaxPacketLength - HeaderLength - 1;
+
+    if (name == nullptr || message == nullptr)
+    {
+        return;
+    }
+
+    const std::string nameText = Core::Text::ToUtf8(name);
+    const std::string messageText = Core::Text::ToUtf8(message);
+    const std::size_t nameLength = Utf8LengthAtMost(nameText, NameFieldLength);
+    const std::size_t messageLength = Utf8LengthAtMost(messageText, MaxMessageLength);
+
+    BYTE packet[MaxPacketLength] = {};
+    packet[0] = 0xC1;
+    packet[1] = static_cast<BYTE>(HeaderLength + messageLength + 1);
+    packet[2] = code;
+    memcpy(packet + 3, nameText.data(), nameLength);
+    memcpy(packet + HeaderLength, messageText.data(), messageLength);
+
+    Connection_SendRaw(handle, packet, packet[1]);
+}
+} // namespace
+#endif
 
 void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attackSpeed)
 {
@@ -44,6 +99,21 @@ void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attac
 
 void PacketFunctions_ClientToServer::SendChecksumResponse(uint32_t checksum)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the checksum response is written here. Byte 3
+    // is padding before the little-endian checksum.
+    const BYTE packet[8] = {
+        0xC3,
+        0x08,
+        0x03,
+        0x00,
+        static_cast<BYTE>(checksum & 0xFF),
+        static_cast<BYTE>((checksum >> 8) & 0xFF),
+        static_cast<BYTE>((checksum >> 16) & 0xFF),
+        static_cast<BYTE>((checksum >> 24) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChecksumResponse = LoadManagedSymbol<::SendChecksumResponse>("SendChecksumResponse");
     if (!dotnet_SendChecksumResponse)
     {
@@ -51,61 +121,13 @@ void PacketFunctions_ClientToServer::SendChecksumResponse(uint32_t checksum)
     }
 
     dotnet_SendChecksumResponse(this->GetHandle(), checksum);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPublicChatMessage(const char16_t* character, const char16_t* message)
 {
 #ifdef __EMSCRIPTEN__
-    // Without the managed bridge, the chat packet is written here. The C1
-    // header is followed by the 10-byte character name and a null-terminated
-    // UTF-8 message, like the managed PublicChatMessage packet.
-    constexpr std::size_t CharacterFieldLength = 10;
-    constexpr std::size_t HeaderLength = 3 + CharacterFieldLength;
-    constexpr std::size_t MaxPacketLength = 0xFF;
-    // The length is one byte, and the message needs a terminator.
-    constexpr std::size_t MaxMessageLength = MaxPacketLength - HeaderLength - 1;
-    constexpr unsigned char Utf8ContinuationMask = 0xC0;
-    constexpr unsigned char Utf8ContinuationBits = 0x80;
-
-    if (character == nullptr || message == nullptr)
-    {
-        return;
-    }
-
-    const std::string characterText = Core::Text::ToUtf8(character);
-    const std::string messageText = Core::Text::ToUtf8(message);
-
-    // Never cut a multi-byte character at either field's byte boundary.
-    std::size_t characterLength = characterText.size();
-    if (characterLength > CharacterFieldLength)
-    {
-        characterLength = CharacterFieldLength;
-        while (characterLength > 0 &&
-               (static_cast<unsigned char>(characterText[characterLength]) & Utf8ContinuationMask) == Utf8ContinuationBits)
-        {
-            --characterLength;
-        }
-    }
-
-    std::size_t messageLength = messageText.size();
-    if (messageLength > MaxMessageLength)
-    {
-        messageLength = MaxMessageLength;
-        while (messageLength > 0 &&
-               (static_cast<unsigned char>(messageText[messageLength]) & Utf8ContinuationMask) == Utf8ContinuationBits)
-        {
-            --messageLength;
-        }
-    }
-
-    BYTE packet[MaxPacketLength] = {};
-    packet[0] = 0xC1;
-    packet[1] = static_cast<BYTE>(HeaderLength + messageLength + 1);
-    packet[2] = 0x00;
-    memcpy(packet + 3, characterText.data(), characterLength);
-    memcpy(packet + HeaderLength, messageText.data(), messageLength);
-
-    Connection_SendRaw(this->GetHandle(), packet, packet[1]);
+    SendChatPacket(this->GetHandle(), 0x00, character, message);
 #else
     static const auto dotnet_SendPublicChatMessage = LoadManagedSymbol<::SendPublicChatMessage>("SendPublicChatMessage");
     if (!dotnet_SendPublicChatMessage)
@@ -119,6 +141,9 @@ void PacketFunctions_ClientToServer::SendPublicChatMessage(const char16_t* chara
 
 void PacketFunctions_ClientToServer::SendWhisperMessage(const char16_t* receiverName, const char16_t* message)
 {
+#ifdef __EMSCRIPTEN__
+    SendChatPacket(this->GetHandle(), 0x02, receiverName, message);
+#else
     static const auto dotnet_SendWhisperMessage = LoadManagedSymbol<::SendWhisperMessage>("SendWhisperMessage");
     if (!dotnet_SendWhisperMessage)
     {
@@ -126,6 +151,7 @@ void PacketFunctions_ClientToServer::SendWhisperMessage(const char16_t* receiver
     }
 
     dotnet_SendWhisperMessage(this->GetHandle(), receiverName, message);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLoginLongPassword(const BYTE* username, uint32_t usernameByteLength, const BYTE* password, uint32_t passwordByteLength, uint32_t tickCount, const BYTE* clientVersion, uint32_t clientVersionByteLength, const BYTE* clientSerial, uint32_t clientSerialByteLength)
@@ -279,6 +305,17 @@ void PacketFunctions_ClientToServer::SendPlayerShopSetItemPriceExtended(uint32_t
 
 void PacketFunctions_ClientToServer::SendPickupItemRequest(uint16_t itemId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the pickup request is written here.
+    const BYTE packet[5] = {
+        0xC3,
+        0x05,
+        0x22,
+        static_cast<BYTE>((itemId >> 8) & 0xFF),
+        static_cast<BYTE>(itemId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPickupItemRequest = LoadManagedSymbol<::SendPickupItemRequest>("SendPickupItemRequest");
     if (!dotnet_SendPickupItemRequest)
     {
@@ -286,6 +323,7 @@ void PacketFunctions_ClientToServer::SendPickupItemRequest(uint16_t itemId)
     }
 
     dotnet_SendPickupItemRequest(this->GetHandle(), itemId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPickupItemRequest075(uint16_t itemId)
@@ -301,6 +339,11 @@ void PacketFunctions_ClientToServer::SendPickupItemRequest075(uint16_t itemId)
 
 void PacketFunctions_ClientToServer::SendDropItemRequest(BYTE targetX, BYTE targetY, BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the drop request is written here.
+    const BYTE packet[6] = { 0xC3, 0x06, 0x23, targetX, targetY, itemSlot };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDropItemRequest = LoadManagedSymbol<::SendDropItemRequest>("SendDropItemRequest");
     if (!dotnet_SendDropItemRequest)
     {
@@ -308,6 +351,7 @@ void PacketFunctions_ClientToServer::SendDropItemRequest(BYTE targetX, BYTE targ
     }
 
     dotnet_SendDropItemRequest(this->GetHandle(), targetX, targetY, itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendItemMoveRequest(ItemStorageKind fromStorage, BYTE fromSlot, const BYTE* itemData, uint32_t itemDataByteLength, ItemStorageKind toStorage, BYTE toSlot)
@@ -349,6 +393,18 @@ void PacketFunctions_ClientToServer::SendItemMoveRequestExtended(ItemStorageKind
 
 void PacketFunctions_ClientToServer::SendConsumeItemRequest(BYTE itemSlot, BYTE targetSlot, FruitUsage fruitConsumption)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the consume request is written here.
+    const BYTE packet[6] = {
+        0xC3,
+        0x06,
+        0x26,
+        itemSlot,
+        targetSlot,
+        static_cast<BYTE>(fruitConsumption),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendConsumeItemRequest = LoadManagedSymbol<::SendConsumeItemRequest>("SendConsumeItemRequest");
     if (!dotnet_SendConsumeItemRequest)
     {
@@ -356,6 +412,7 @@ void PacketFunctions_ClientToServer::SendConsumeItemRequest(BYTE itemSlot, BYTE 
     }
 
     dotnet_SendConsumeItemRequest(this->GetHandle(), itemSlot, targetSlot, fruitConsumption);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendConsumeItemRequest075(BYTE itemSlot, BYTE targetSlot)
@@ -530,6 +587,19 @@ void PacketFunctions_ClientToServer::SendEnterGateRequest075(BYTE gateNumber, BY
 
 void PacketFunctions_ClientToServer::SendTeleportTarget(uint16_t targetId, BYTE teleportTargetX, BYTE teleportTargetY)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the teleport target is written here.
+    const BYTE packet[7] = {
+        0xC3,
+        0x07,
+        0xB0,
+        static_cast<BYTE>(targetId & 0xFF),
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        teleportTargetX,
+        teleportTargetY,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTeleportTarget = LoadManagedSymbol<::SendTeleportTarget>("SendTeleportTarget");
     if (!dotnet_SendTeleportTarget)
     {
@@ -537,6 +607,7 @@ void PacketFunctions_ClientToServer::SendTeleportTarget(uint16_t targetId, BYTE 
     }
 
     dotnet_SendTeleportTarget(this->GetHandle(), targetId, teleportTargetX, teleportTargetY);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendServerChangeAuthentication(const BYTE* accountXor3, uint32_t accountXor3ByteLength, const BYTE* characterNameXor3, uint32_t characterNameXor3ByteLength, uint32_t authCode1, uint32_t authCode2, uint32_t authCode3, uint32_t authCode4, uint32_t tickCount, const BYTE* clientVersion, uint32_t clientVersionByteLength, const BYTE* clientSerial, uint32_t clientSerialByteLength)
@@ -1170,6 +1241,11 @@ void PacketFunctions_ClientToServer::SendWalkRequest075(BYTE sourceX, BYTE sourc
 
 void PacketFunctions_ClientToServer::SendInstantMoveRequest(BYTE targetX, BYTE targetY)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the instant move request is written here.
+    const BYTE packet[5] = { 0xC1, 0x05, 0x15, targetX, targetY };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendInstantMoveRequest = LoadManagedSymbol<::SendInstantMoveRequest>("SendInstantMoveRequest");
     if (!dotnet_SendInstantMoveRequest)
     {
@@ -1177,10 +1253,16 @@ void PacketFunctions_ClientToServer::SendInstantMoveRequest(BYTE targetX, BYTE t
     }
 
     dotnet_SendInstantMoveRequest(this->GetHandle(), targetX, targetY);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendAnimationRequest(BYTE rotation, BYTE animationNumber)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the animation request is written here.
+    const BYTE packet[5] = { 0xC1, 0x05, 0x18, rotation, animationNumber };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendAnimationRequest = LoadManagedSymbol<::SendAnimationRequest>("SendAnimationRequest");
     if (!dotnet_SendAnimationRequest)
     {
@@ -1188,6 +1270,7 @@ void PacketFunctions_ClientToServer::SendAnimationRequest(BYTE rotation, BYTE an
     }
 
     dotnet_SendAnimationRequest(this->GetHandle(), rotation, animationNumber);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRequestCharacterList(BYTE language)
@@ -1208,6 +1291,29 @@ void PacketFunctions_ClientToServer::SendRequestCharacterList(BYTE language)
 
 void PacketFunctions_ClientToServer::SendCreateCharacter(const char16_t* name, CharacterClassNumber class_)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the create-character request is written here.
+    // The class occupies the upper six bits of the last byte.
+    constexpr std::size_t NameFieldLength = 10;
+    constexpr std::size_t NameOffset = 4;
+    constexpr std::size_t ClassOffset = 14;
+    constexpr BYTE ClassMask = 0x3F;
+    constexpr unsigned ClassShift = 2;
+
+    if (name == nullptr)
+    {
+        return;
+    }
+
+    const std::string nameText = Core::Text::ToUtf8(name);
+    const std::size_t nameLength = Utf8LengthAtMost(nameText, NameFieldLength);
+
+    BYTE packet[15] = { 0xC1, 0x0F, 0xF3, 0x01 };
+    memcpy(packet + NameOffset, nameText.data(), nameLength);
+    packet[ClassOffset] = static_cast<BYTE>((static_cast<BYTE>(class_) & ClassMask) << ClassShift);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCreateCharacter = LoadManagedSymbol<::SendCreateCharacter>("SendCreateCharacter");
     if (!dotnet_SendCreateCharacter)
     {
@@ -1215,10 +1321,41 @@ void PacketFunctions_ClientToServer::SendCreateCharacter(const char16_t* name, C
     }
 
     dotnet_SendCreateCharacter(this->GetHandle(), name, class_);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDeleteCharacter(const char16_t* name, const char16_t* securityCode)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the delete-character request is written here.
+    // The security code is variable and null-terminated.
+    constexpr std::size_t NameFieldLength = 10;
+    constexpr std::size_t NameOffset = 4;
+    constexpr std::size_t SecurityCodeOffset = 14;
+    constexpr std::size_t MaxPacketLength = 0xFF;
+    constexpr std::size_t MaxSecurityCodeLength = MaxPacketLength - SecurityCodeOffset - 1;
+
+    if (name == nullptr || securityCode == nullptr)
+    {
+        return;
+    }
+
+    const std::string nameText = Core::Text::ToUtf8(name);
+    const std::string securityText = Core::Text::ToUtf8(securityCode);
+    const std::size_t nameLength = Utf8LengthAtMost(nameText, NameFieldLength);
+    const std::size_t securityLength = Utf8LengthAtMost(securityText, MaxSecurityCodeLength);
+
+    BYTE packet[MaxPacketLength] = {
+        0xC1,
+        static_cast<BYTE>(SecurityCodeOffset + securityLength + 1),
+        0xF3,
+        0x02,
+    };
+    memcpy(packet + NameOffset, nameText.data(), nameLength);
+    memcpy(packet + SecurityCodeOffset, securityText.data(), securityLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, packet[1]);
+#else
     static const auto dotnet_SendDeleteCharacter = LoadManagedSymbol<::SendDeleteCharacter>("SendDeleteCharacter");
     if (!dotnet_SendDeleteCharacter)
     {
@@ -1226,6 +1363,7 @@ void PacketFunctions_ClientToServer::SendDeleteCharacter(const char16_t* name, c
     }
 
     dotnet_SendDeleteCharacter(this->GetHandle(), name, securityCode);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSelectCharacter(const char16_t* name)
@@ -1293,6 +1431,11 @@ void PacketFunctions_ClientToServer::SendIncreaseCharacterStatPoint(CharacterSta
 
 void PacketFunctions_ClientToServer::SendInventoryRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the inventory request is written here.
+    const BYTE packet[4] = { 0xC3, 0x04, 0xF3, 0x10 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendInventoryRequest = LoadManagedSymbol<::SendInventoryRequest>("SendInventoryRequest");
     if (!dotnet_SendInventoryRequest)
     {
@@ -1300,10 +1443,16 @@ void PacketFunctions_ClientToServer::SendInventoryRequest()
     }
 
     dotnet_SendInventoryRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendClientReadyAfterMapChange()
 {
+#ifdef __EMSCRIPTEN__
+    // The server expects this acknowledgement after every map change.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF3, 0x12 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendClientReadyAfterMapChange = LoadManagedSymbol<::SendClientReadyAfterMapChange>("SendClientReadyAfterMapChange");
     if (!dotnet_SendClientReadyAfterMapChange)
     {
@@ -1311,10 +1460,35 @@ void PacketFunctions_ClientToServer::SendClientReadyAfterMapChange()
     }
 
     dotnet_SendClientReadyAfterMapChange(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSaveKeyConfiguration(const BYTE* configuration, uint32_t configurationByteLength)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the key configuration is written here.
+    constexpr std::size_t ConfigurationOffset = 4;
+    constexpr std::size_t MaxPacketLength = 0xFF;
+    constexpr std::size_t MaxConfigurationLength = MaxPacketLength - ConfigurationOffset;
+
+    if (configuration == nullptr)
+    {
+        return;
+    }
+
+    const std::size_t configurationLength =
+        configurationByteLength > MaxConfigurationLength ? MaxConfigurationLength : configurationByteLength;
+
+    BYTE packet[MaxPacketLength] = {
+        0xC1,
+        static_cast<BYTE>(ConfigurationOffset + configurationLength),
+        0xF3,
+        0x30,
+    };
+    memcpy(packet + ConfigurationOffset, configuration, configurationLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, packet[1]);
+#else
     static const auto dotnet_SendSaveKeyConfiguration = LoadManagedSymbol<::SendSaveKeyConfiguration>("SendSaveKeyConfiguration");
     if (!dotnet_SendSaveKeyConfiguration)
     {
@@ -1322,10 +1496,23 @@ void PacketFunctions_ClientToServer::SendSaveKeyConfiguration(const BYTE* config
     }
 
     dotnet_SendSaveKeyConfiguration(this->GetHandle(), configuration, configurationByteLength);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendAddMasterSkillPoint(uint16_t skillId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the master skill point request is written here.
+    const BYTE packet[6] = {
+        0xC1,
+        0x06,
+        0xF3,
+        0x52,
+        static_cast<BYTE>(skillId & 0xFF),
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendAddMasterSkillPoint = LoadManagedSymbol<::SendAddMasterSkillPoint>("SendAddMasterSkillPoint");
     if (!dotnet_SendAddMasterSkillPoint)
     {
@@ -1333,10 +1520,24 @@ void PacketFunctions_ClientToServer::SendAddMasterSkillPoint(uint16_t skillId)
     }
 
     dotnet_SendAddMasterSkillPoint(this->GetHandle(), skillId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendHitRequest(uint16_t targetId, BYTE attackAnimation, BYTE lookingDirection)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the hit request is written here.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0x11,
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        static_cast<BYTE>(targetId & 0xFF),
+        attackAnimation,
+        lookingDirection,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendHitRequest = LoadManagedSymbol<::SendHitRequest>("SendHitRequest");
     if (!dotnet_SendHitRequest)
     {
@@ -1344,10 +1545,24 @@ void PacketFunctions_ClientToServer::SendHitRequest(uint16_t targetId, BYTE atta
     }
 
     dotnet_SendHitRequest(this->GetHandle(), targetId, attackAnimation, lookingDirection);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTargetedSkill(uint16_t skillId, uint16_t targetId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the targeted skill request is written here.
+    const BYTE packet[7] = {
+        0xC3,
+        0x07,
+        0x19,
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+        static_cast<BYTE>(skillId & 0xFF),
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        static_cast<BYTE>(targetId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTargetedSkill = LoadManagedSymbol<::SendTargetedSkill>("SendTargetedSkill");
     if (!dotnet_SendTargetedSkill)
     {
@@ -1355,6 +1570,7 @@ void PacketFunctions_ClientToServer::SendTargetedSkill(uint16_t skillId, uint16_
     }
 
     dotnet_SendTargetedSkill(this->GetHandle(), skillId, targetId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTargetedSkill075(BYTE skillIndex, uint16_t targetId)
@@ -1381,6 +1597,19 @@ void PacketFunctions_ClientToServer::SendTargetedSkill095(BYTE skillIndex, uint1
 
 void PacketFunctions_ClientToServer::SendMagicEffectCancelRequest(uint16_t skillId, uint16_t playerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the buff-cancel request is written here.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0x1B,
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+        static_cast<BYTE>(skillId & 0xFF),
+        static_cast<BYTE>((playerId >> 8) & 0xFF),
+        static_cast<BYTE>(playerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMagicEffectCancelRequest = LoadManagedSymbol<::SendMagicEffectCancelRequest>("SendMagicEffectCancelRequest");
     if (!dotnet_SendMagicEffectCancelRequest)
     {
@@ -1388,10 +1617,31 @@ void PacketFunctions_ClientToServer::SendMagicEffectCancelRequest(uint16_t skill
     }
 
     dotnet_SendMagicEffectCancelRequest(this->GetHandle(), skillId, playerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendAreaSkill(uint16_t skillId, BYTE targetX, BYTE targetY, BYTE rotation, uint16_t extraTargetId, BYTE animationCounter)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the area skill request is written here. Bytes 8
+    // and 9 are padding before the extra target id.
+    const BYTE packet[13] = {
+        0xC3,
+        0x0D,
+        0x1E,
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+        static_cast<BYTE>(skillId & 0xFF),
+        targetX,
+        targetY,
+        rotation,
+        0x00,
+        0x00,
+        static_cast<BYTE>((extraTargetId >> 8) & 0xFF),
+        static_cast<BYTE>(extraTargetId & 0xFF),
+        animationCounter,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendAreaSkill = LoadManagedSymbol<::SendAreaSkill>("SendAreaSkill");
     if (!dotnet_SendAreaSkill)
     {
@@ -1399,6 +1649,7 @@ void PacketFunctions_ClientToServer::SendAreaSkill(uint16_t skillId, BYTE target
     }
 
     dotnet_SendAreaSkill(this->GetHandle(), skillId, targetX, targetY, rotation, extraTargetId, animationCounter);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendAreaSkill075(BYTE skillIndex, BYTE targetX, BYTE targetY, BYTE rotation)
@@ -1425,6 +1676,21 @@ void PacketFunctions_ClientToServer::SendAreaSkill095(BYTE skillIndex, BYTE targ
 
 void PacketFunctions_ClientToServer::SendRageAttackRequest(uint16_t skillId, uint16_t targetId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the rage attack request is written here. Byte
+    // 5 is padding before the target id.
+    const BYTE packet[8] = {
+        0xC3,
+        0x08,
+        0x4A,
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+        static_cast<BYTE>(skillId & 0xFF),
+        0x00,
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        static_cast<BYTE>(targetId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRageAttackRequest = LoadManagedSymbol<::SendRageAttackRequest>("SendRageAttackRequest");
     if (!dotnet_SendRageAttackRequest)
     {
@@ -1432,10 +1698,24 @@ void PacketFunctions_ClientToServer::SendRageAttackRequest(uint16_t skillId, uin
     }
 
     dotnet_SendRageAttackRequest(this->GetHandle(), skillId, targetId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRageAttackRangeRequest(uint16_t skillId, uint16_t targetId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ranged rage attack request is written here.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0x4B,
+        static_cast<BYTE>((skillId >> 8) & 0xFF),
+        static_cast<BYTE>(skillId & 0xFF),
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        static_cast<BYTE>(targetId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRageAttackRangeRequest = LoadManagedSymbol<::SendRageAttackRangeRequest>("SendRageAttackRangeRequest");
     if (!dotnet_SendRageAttackRangeRequest)
     {
@@ -1443,6 +1723,7 @@ void PacketFunctions_ClientToServer::SendRageAttackRangeRequest(uint16_t skillId
     }
 
     dotnet_SendRageAttackRangeRequest(this->GetHandle(), skillId, targetId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTradeCancel()
@@ -1722,6 +2003,11 @@ void PacketFunctions_ClientToServer::SendRemoveAllianceGuildRequest(const char16
 
 void PacketFunctions_ClientToServer::SendPingResponse()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ping response is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x71 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPingResponse = LoadManagedSymbol<::SendPingResponse>("SendPingResponse");
     if (!dotnet_SendPingResponse)
     {
@@ -1729,6 +2015,7 @@ void PacketFunctions_ClientToServer::SendPingResponse()
     }
 
     dotnet_SendPingResponse(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendItemRepair(BYTE inventoryItemSlot)

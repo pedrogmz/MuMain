@@ -26,21 +26,31 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **176** siguen sin rama `__EMSCRIPTEN__`.
-- **17** ya tienen rama nativa:
-  `SendPing`, `SendItemMoveRequestExtended`, `SendWalkRequest`,
-  `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
-  `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
-  `SendSellItemToNpcRequest`, `SendRepairItemRequest`, `SendNpcBuffRequest`,
-  `SendPublicChatMessage`, `SendIncreaseCharacterStatPoint`, `SendLogOut`,
-  `SendWarpCommandRequest` y `SendEnterGateRequest`.
-- De los 176 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+- **155** siguen sin rama `__EMSCRIPTEN__`.
+- **38** ya tienen rama nativa:
+  - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
+    `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
+    `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
+    `SendSellItemToNpcRequest`, `SendRepairItemRequest`, `SendNpcBuffRequest`,
+    `SendEnterGateRequest`, `SendWarpCommandRequest`.
+  - Items e inventario: `SendItemMoveRequestExtended`, `SendPickupItemRequest`,
+    `SendDropItemRequest`, `SendConsumeItemRequest`, `SendInventoryRequest`.
+  - Chat y personajes: `SendPublicChatMessage`, `SendWhisperMessage`,
+    `SendCreateCharacter`, `SendDeleteCharacter`.
+  - Mapa, combate y acciones: `SendClientReadyAfterMapChange`, `SendHitRequest`,
+    `SendTargetedSkill`, `SendAreaSkill`, `SendRageAttackRequest`,
+    `SendRageAttackRangeRequest`, `SendInstantMoveRequest`,
+    `SendAnimationRequest`, `SendMagicEffectCancelRequest`, `SendTeleportTarget`.
+  - Estadísticas y configuración: `SendIncreaseCharacterStatPoint`,
+    `SendAddMasterSkillPoint`, `SendSaveKeyConfiguration`, `SendLogOut`,
+    `SendChecksumResponse`, `SendPingResponse`.
+- De los 155 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
   gestiona el chat por el game server.
 
-## Lote crítico (gameplay básico)
+## Lote crítico — corregido (2026-10-31)
 
 | Función | Paquete | Impacto |
 |---|---|---|
@@ -64,6 +74,10 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 | `SendAddMasterSkillPoint` | C1 `F3 52`, len 6 | Subir puntos master. |
 | `SendSaveKeyConfiguration` | C1 `F3 30`, variable | Guardar atajos de teclado. |
 | `SendChecksumResponse` | C3 `03`, len 8 | Si el servidor pide checksum y no se responde, puede desconectar. |
+| `SendPingResponse` | C1 `71`, len 3 | Respuesta al ping del servidor. |
+
+Los 21 wrappers de esta tabla ya tienen rama nativa. Quedan pendientes de
+probar en juego, sobre todo el ACK de cambio de mapa y el combate.
 
 ## Segunda capa (features completas)
 
@@ -106,14 +120,14 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 
 ## Plan
 
-1. **Lote crítico** (en curso): desbloquear combate, items, mapa y personajes.
+1. **Lote crítico** (hecho el 2026-10-31): combate, items, mapa y personajes.
 2. **Lote NPC/quest/crafting/baúl**.
 3. **Lote social**: trade, party, guild, amigos y tienda personal.
 4. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto de los 176 wrappers sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 155 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
@@ -124,34 +138,27 @@ bridge) y sirve para priorizar.
 | 9 | `SendCashShopStorageListRequest` | C1HeaderWithSubCode | `D2/05` | 10 |
 | 8 | `SendPetCommandRequest` | C1Header | `A7` | 7 |
 | 8 | `SendMiniGameOpeningStateRequest` | C1Header | `91` | 5 |
-| 7 | `SendPickupItemRequest` | C3Header | `22` | 5 |
 | 6 | `SendCashShopPointInfoRequest` | C1HeaderWithSubCode | `D2/01` | 4 |
 | 6 | `SendPetInfoRequest` | C1Header | `A9` | 6 |
 | 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
 | 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
-| 5 | `SendInventoryRequest` | C3HeaderWithSubCode | `F3/10` | 4 |
 | 4 | `SendPlayerShopItemListRequest` | C3HeaderWithSubCode | `3F/05` | 16 |
 | 4 | `SendPartyInviteRequest` | C1Header | `40` | 5 |
-| 4 | `SendInstantMoveRequest` | C1Header | `15` | 5 |
-| 4 | `SendRageAttackRequest` | C3Header | `4A` | 8 |
 | 4 | `SendTradeCancel` | C1Header | `3D` | 3 |
 | 4 | `SendTradeButtonStateChange` | C1Header | `3C` | 4 |
 | 4 | `SendTradeRequest` | C3Header | `36` | 5 |
 | 4 | `SendGuildListRequest` | C1Header | `52` | 3 |
 | 4 | `SendGuildWarResponse` | C1Header | `61` | 4 |
 | 4 | `SendSetFriendOnlineState` | C1Header | `C4` | 4 |
-| 3 | `SendDropItemRequest` | C3Header | `23` | 6 |
 | 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
 | 3 | `SendVaultMoveMoneyRequest` | C1Header | `81` | 8 |
 | 3 | `SendPartyInviteResponse` | C1Header | `41` | 6 |
-| 3 | `SendCreateCharacter` | C1HeaderWithSubCode | `F3/01` | 15 |
 | 3 | `SendTradeRequestResponse` | C1Header | `37` | 4 |
 | 3 | `SendGuildJoinRequest` | C1Header | `50` | 5 |
 | 3 | `SendGuildRelationshipChangeResponse` | C1Header | `E6` | 8 |
 | 3 | `SendLegacyQuestStateSetRequest` | C1Header | `A2` | 5 |
 | 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
 | 3 | `SendDuelStartRequest` | C3HeaderWithSubCode | `AA/01` | 16 |
-| 2 | `SendWhisperMessage` | C1Header | `02` | — |
 | 2 | `SendPlayerShopOpen` | C3HeaderWithSubCode | `3F/02` | 30 |
 | 2 | `SendPlayerShopClose` | C3HeaderWithSubCode | `3F/03` | 4 |
 | 2 | `SendCastleSiegeRegistrationStateRequest` | C1HeaderWithSubCode | `B2/03` | 4 |
@@ -185,15 +192,12 @@ bridge) y sirve para priorizar.
 | 2 | `SendMiniGameEventCountRequest` | C1Header | `9F` | 4 |
 | 2 | `SendChaosCastleEnterRequest` | C1HeaderWithSubCode | `AF/01` | 6 |
 | 2 | `SendDuelStopRequest` | C3HeaderWithSubCode | `AA/03` | 4 |
-| 1 | `SendChecksumResponse` | C3Header | `03` | 8 |
 | 1 | `SendLogOutByCheatDetection` | C3HeaderWithSubCode | `F1/03` | 6 |
 | 1 | `SendResetCharacterPointRequest` | C1HeaderWithSubCode | `F2/00` | 4 |
 | 1 | `SendPlayerShopSetItemPrice` | C3HeaderWithSubCode | `3F/01` | 9 |
 | 1 | `SendPlayerShopItemBuyRequest` | C3HeaderWithSubCode | `3F/06` | 17 |
 | 1 | `SendPlayerShopCloseOther` | C3HeaderWithSubCode | `3F/07` | 16 |
 | 1 | `SendPlayerShopSetItemPriceExtended` | C3HeaderWithSubCode | `3F/09` | 13 |
-| 1 | `SendConsumeItemRequest` | C3Header | `26` | 6 |
-| 1 | `SendTeleportTarget` | C3Header | `B0` | 7 |
 | 1 | `SendServerChangeAuthentication` | C3HeaderWithSubCode | `B1/01` | 69 |
 | 1 | `SendCastleSiegeStatusRequest` | C1HeaderWithSubCode | `B2/00` | 4 |
 | 1 | `SendCastleSiegeRegistrationRequest` | C1HeaderWithSubCode | `B2/01` | 4 |
@@ -225,23 +229,12 @@ bridge) y sirve para priorizar.
 | 1 | `SendSetVaultPin` | C1HeaderWithSubCode | `83/01` | 27 |
 | 1 | `SendRemoveVaultPin` | C1HeaderWithSubCode | `83/02` | 27 |
 | 1 | `SendPartyListRequest` | C1Header | `42` | 3 |
-| 1 | `SendAnimationRequest` | C1Header | `18` | 5 |
-| 1 | `SendDeleteCharacter` | C1HeaderWithSubCode | `F3/02` | 24 |
-| 1 | `SendClientReadyAfterMapChange` | C1HeaderWithSubCode | `F3/12` | 4 |
-| 1 | `SendSaveKeyConfiguration` | C1HeaderWithSubCode | `F3/30` | — |
-| 1 | `SendAddMasterSkillPoint` | C1HeaderWithSubCode | `F3/52` | 6 |
-| 1 | `SendHitRequest` | C1Header | `11` | 7 |
-| 1 | `SendTargetedSkill` | C3Header | `19` | 7 |
-| 1 | `SendMagicEffectCancelRequest` | C1Header | `1B` | 7 |
-| 1 | `SendAreaSkill` | C3Header | `1E` | 13 |
-| 1 | `SendRageAttackRangeRequest` | C1Header | `4B` | 7 |
 | 1 | `SendSetTradeMoney` | C1Header | `3A` | 8 |
 | 1 | `SendLetterSendRequest` | C4Header | `C5` | — |
 | 1 | `SendGuildKickPlayerRequest` | C1Header | `53` | — |
 | 1 | `SendGuildCreateRequest` | C1Header | `55` | 44 |
 | 1 | `SendGuildInfoRequest` | C1Header | `66` | 8 |
 | 1 | `SendRemoveAllianceGuildRequest` | C1HeaderWithSubCode | `EB/01` | 12 |
-| 1 | `SendPingResponse` | C1Header | `71` | 3 |
 | 1 | `SendFriendListRequest` | C1Header | `C0` | 3 |
 | 1 | `SendFriendDelete` | C1Header | `C3` | 13 |
 | 1 | `SendChatRoomCreateRequest` | C1Header | `CA` | 13 |
