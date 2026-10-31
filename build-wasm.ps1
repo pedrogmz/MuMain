@@ -4,14 +4,18 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = "C:\Users\Poisson\Documents\MuMain"
-$stackPublic = "C:\Users\Poisson\Documents\openmu-browser-stack\public"
+$repoRoot = $PSScriptRoot
+$stackPublic = Join-Path (Split-Path $PSScriptRoot -Parent) "openmu-browser-stack\public"
 
 $env:PATH = "C:\Users\Poisson\.local\dotnet;C:\Users\Poisson\.local\cmake-3.31.5-windows-x86_64\bin;C:\Users\Poisson\.local\bin;C:\Users\Poisson\emsdk;C:\Users\Poisson\emsdk\upstream\emscripten;C:\Users\Poisson\emsdk\node\24.19.0_64bit\bin;C:\Users\Poisson\emsdk\python\3.13.3_64bit;" + $env:PATH
 
 Write-Host "=== Compiling MuMain to WebAssembly ===" -ForegroundColor Cyan
 Set-Location $repoRoot
 
+# out/build/wasm-web was configured against C:\Users\Poisson\Documents\MuMain, so an
+# incremental ninja run only works while that path still resolves to this checkout
+# (an NTFS junction was created for it). Re-run cmake into a fresh build directory to
+# drop the dependency; that forces a full rebuild.
 ninja -C out/build/wasm-web
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Compilation failed."

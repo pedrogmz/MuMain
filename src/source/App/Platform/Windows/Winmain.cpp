@@ -1203,6 +1203,30 @@ void HandleWindowResize(int width, int height)
     UpdateCursorClip();
 }
 
+// The window does not always get the size that was requested: the OS can clamp
+// it, and on the web the page's CSS owns the canvas size, so SDL reports that
+// instead of the configured resolution. Adopt the real size before the renderer
+// and RmlUi are created; later changes arrive as SDL_EVENT_WINDOW_RESIZED and go
+// through HandleWindowResize().
+void AdoptActualWindowSize()
+{
+    if (!g_sdlWindow)
+        return;
+
+    int actualWidth = 0;
+    int actualHeight = 0;
+    if (!SDL_GetWindowSize(g_sdlWindow, &actualWidth, &actualHeight) || actualWidth <= 0 || actualHeight <= 0)
+        return;
+
+    WindowWidth = static_cast<unsigned int>(actualWidth);
+    WindowHeight = static_cast<unsigned int>(actualHeight);
+    UI::Scaling::SetActiveTransform(UI::Scaling::ScreenOverlayTransform(WindowWidth, WindowHeight));
+    g_fWindowMouseX = static_cast<float>(WindowWidth) * 0.5f;
+    g_fWindowMouseY = static_cast<float>(WindowHeight) * 0.5f;
+    MouseX = static_cast<int>(UI::Scaling::LogicalX(UI::Scaling::GetActiveTransform(), g_fWindowMouseX));
+    MouseY = static_cast<int>(UI::Scaling::LogicalY(UI::Scaling::GetActiveTransform(), g_fWindowMouseY));
+}
+
 void HandleFocusChange(bool active)
 {
     if (InputDiagnosticsEnabled())
@@ -2197,7 +2221,15 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nC
     SetWorkingDirectoryToBasePath();
 #endif
 
+#ifdef __EMSCRIPTEN__
+    // The page stretches the canvas over the browser window, so the canvas is
+    // sized by CSS. SDL only forwards browser resizes when the window is
+    // resizable, and the page itself already fills the browser window, so no
+    // fullscreen request is needed (or possible without a user gesture).
+    const SDL_WindowFlags windowFlags = Core::Platform::BuildSDLWindowFlags(false, true);
+#else
     const SDL_WindowFlags windowFlags = Core::Platform::BuildSDLWindowFlags(g_bUseWindowMode != TRUE, false);
+#endif
 
     g_sdlWindow =
         SDL_CreateWindow("MU Online", static_cast<int>(WindowWidth), static_cast<int>(WindowHeight), windowFlags);
@@ -2210,6 +2242,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nC
     Core::Platform::SetGameWindow(g_sdlWindow);
 
     RefreshWindowContentScale();
+    AdoptActualWindowSize();
 
 #if defined(__linux__)
     SDL_Surface* applicationIcon = SDL_LoadPNG(Core::Platform::GameWindowIconFile);
