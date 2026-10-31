@@ -263,6 +263,20 @@ void PacketFunctions_ClientToServer::SendItemMoveRequest(ItemStorageKind fromSto
 
 void PacketFunctions_ClientToServer::SendItemMoveRequestExtended(ItemStorageKind fromStorage, BYTE fromSlot, ItemStorageKind toStorage, BYTE toSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the extended item move is written here.
+    const BYTE packet[7] = {
+        0xC3,
+        0x07,
+        0x24,
+        static_cast<BYTE>(fromStorage),
+        fromSlot,
+        static_cast<BYTE>(toStorage),
+        toSlot,
+    };
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendItemMoveRequestExtended = LoadManagedSymbol<::SendItemMoveRequestExtended>("SendItemMoveRequestExtended");
     if (!dotnet_SendItemMoveRequestExtended)
     {
@@ -270,6 +284,7 @@ void PacketFunctions_ClientToServer::SendItemMoveRequestExtended(ItemStorageKind
     }
 
     dotnet_SendItemMoveRequestExtended(this->GetHandle(), fromStorage, fromSlot, toStorage, toSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendConsumeItemRequest(BYTE itemSlot, BYTE targetSlot, FruitUsage fruitConsumption)

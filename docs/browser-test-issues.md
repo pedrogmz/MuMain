@@ -23,7 +23,7 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 | BUG-002 | La tecla `M` no abre el mapa de transporte | Cliente (input/UI) | Media | Abierto |
 | BUG-003 | No se envían mensajes por el chat | Cliente (input/red) | Alta | Abierto |
 | BUG-004 | El botón `+` de estadísticas no sube puntos | Cliente (UI/red) | Alta | Abierto |
-| BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/input) | Alta | Abierto |
+| BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/red) | Alta | Corregido (pendiente de probar) |
 | BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Abierto |
 | BUG-007 | NPCs y monstruos de Lorencia no aparecen (spawn correcto en servidor) | Cliente (protocolo/viewport) | Alta | Corregido |
 
@@ -150,25 +150,34 @@ intentar soltarlo en el inventario o en otra casilla de equipo.
 
 **Esperado.** El item se mueve entre equipo e inventario.
 
-**Actual.** El item queda anclado al cursor y el estado no se limpia.
+**Actual (antes del arreglo).** El item queda anclado al cursor y el estado no se limpia.
 
-**Pistas / hipótesis.**
+**Causa raíz.** La misma que BUG-007: el cliente llamaba a
+`SendItemMoveRequestExtended` al soltar el item, pero esa función era un no-op en
+WASM (`LoadManagedSymbol` devuelve `nullptr`). El paquete `C3 24` nunca salía, el
+servidor no confirmaba el movimiento y `ReceivePlayerTransfer` /
+`DiscardPickedItem` nunca se ejecutaban, así que el item seguía pegado al cursor.
 
-- Estado de "item en el cursor": `src/source/UI/Inventory/MyInventory.cpp`
-  (`SetStandbyItemKey`, `GetStandbyItemKey`, `GetStandbyItem`,
-  `GetStandbyItemIndex`, ~1194-1218) y `UnequipItem` (~297).
-- Manejo de la respuesta/paquete: `src/source/Network/Server/WSclient.cpp`
-  (~8938 y ~8965 usan `UI::Inventory::StandbyItem()` /
-  `StandbyItemIndex()`).
-- Puede que el clic de "soltar" no se procese en la ruta de input WASM/RmlUi, que
-  la petición de mover item use un índice de slot incorrecto, o que el servidor
-  rechace el movimiento y el cliente no limpie el estado standby.
+**Arreglo.** Se añadió a `SendItemMoveRequestExtended`
+(`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`) una rama
+`__EMSCRIPTEN__` que escribe el paquete nativo:
 
-**Archivos probablemente implicados.**
-`src/source/UI/Inventory/MyInventory.cpp`,
-`src/source/UI/Inventory/InventoryCtrl.cpp`,
-`src/source/Network/Server/WSclient.cpp`,
-`src/source/Engine/Object/ZzzInventory.cpp`.
+```
+C3 07 24 <FromStorage> <FromSlot> <ToStorage> <ToSlot>
+```
+
+**Verificación.** El cliente compila y el paquete coincide con la definición
+`ItemMoveRequestExtended` de `ClientToServerPackets.xml` (longitud 7). Queda
+pendiente confirmarlo en una sesión con el cliente recargado: al soltar el item
+debe aparecer `C3 24` en `proxy.log` y el servidor debe responder con su
+`0x24`, momento en que `ReceivePlayerTransfer` limpia el cursor.
+
+**Archivos implicados.**
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendItemMoveRequestExtended`),
+`src/source/Engine/Object/ZzzInventory.cpp` (`SendRequestEquipmentItem`),
+`src/source/UI/Inventory/MyInventory.cpp` (`EquipmentWindowProcess`),
+`src/source/Network/Server/WSclient.cpp` (`ReceiveEquipmentItemExtended`).
 
 ## BUG-006 — Menú de escape: Switch Character / Select Server / Exit Game
 
@@ -282,19 +291,17 @@ Los spawns del servidor se comprobaron en la base de datos
 
 La misma limitación que causaba BUG-007 afecta a casi todos los paquetes
 cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
-`nullptr` en Emscripten. Ya se vio con el movimiento; los envíos de chat,
-puntos de estadísticas, movimiento de items y logout usan el mismo patrón y
-necesitan una rama nativa `#ifdef __EMSCRIPTEN__` como la de `SendWalkRequest`.
-Antes de tocar la UI conviene comprobar en `proxy.log` si el paquete sale o no:
-si no sale, el problema está en el bridge, no en el botón.
+`nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007) y el
+movimiento de items (BUG-005). Chat, puntos de estadísticas y logout usan el
+mismo patrón y necesitan una rama nativa `#ifdef __EMSCRIPTEN__`. Antes de tocar
+la UI conviene comprobar en `proxy.log` si el paquete sale o no: si no sale, el
+problema está en el bridge, no en el botón.
 
 ## Prioridad sugerida
 
-1. **BUG-005**: implementar `SendItemMoveRequestExtended` (C3 `0x24`) para
-   WASM. Es el mismo patrón que BUG-007 y desbloquea equipar/desequipar.
-2. **BUG-003 y BUG-004**: serializadores nativos de `PublicChatMessage`
+1. **BUG-003 y BUG-004**: serializadores nativos de `PublicChatMessage`
    (C1 `0x00`) e `IncreaseCharacterStatPoint` (C3 `F3 06`).
-3. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
+2. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
    revisar aparte el cierre de ventana de Exit Game.
-4. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
+3. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
    el paquete de regeneración llegue y que el input de teclado llegue al canvas.
