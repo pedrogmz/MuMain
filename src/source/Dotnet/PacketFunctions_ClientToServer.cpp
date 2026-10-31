@@ -12,6 +12,7 @@
 //------------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "Core/Text/Utf8.h"
 #include "PacketFunctions_CommonEnums.h"
 #include "PacketFunctions_ClientToServer_Enums.h"
 #include "PacketFunctions_ClientToServer.h"
@@ -54,6 +55,58 @@ void PacketFunctions_ClientToServer::SendChecksumResponse(uint32_t checksum)
 
 void PacketFunctions_ClientToServer::SendPublicChatMessage(const char16_t* character, const char16_t* message)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the chat packet is written here. The C1
+    // header is followed by the 10-byte character name and a null-terminated
+    // UTF-8 message, like the managed PublicChatMessage packet.
+    constexpr std::size_t CharacterFieldLength = 10;
+    constexpr std::size_t HeaderLength = 3 + CharacterFieldLength;
+    constexpr std::size_t MaxPacketLength = 0xFF;
+    // The length is one byte, and the message needs a terminator.
+    constexpr std::size_t MaxMessageLength = MaxPacketLength - HeaderLength - 1;
+    constexpr unsigned char Utf8ContinuationMask = 0xC0;
+    constexpr unsigned char Utf8ContinuationBits = 0x80;
+
+    if (character == nullptr || message == nullptr)
+    {
+        return;
+    }
+
+    const std::string characterText = Core::Text::ToUtf8(character);
+    const std::string messageText = Core::Text::ToUtf8(message);
+
+    // Never cut a multi-byte character at either field's byte boundary.
+    std::size_t characterLength = characterText.size();
+    if (characterLength > CharacterFieldLength)
+    {
+        characterLength = CharacterFieldLength;
+        while (characterLength > 0 &&
+               (static_cast<unsigned char>(characterText[characterLength]) & Utf8ContinuationMask) == Utf8ContinuationBits)
+        {
+            --characterLength;
+        }
+    }
+
+    std::size_t messageLength = messageText.size();
+    if (messageLength > MaxMessageLength)
+    {
+        messageLength = MaxMessageLength;
+        while (messageLength > 0 &&
+               (static_cast<unsigned char>(messageText[messageLength]) & Utf8ContinuationMask) == Utf8ContinuationBits)
+        {
+            --messageLength;
+        }
+    }
+
+    BYTE packet[MaxPacketLength] = {};
+    packet[0] = 0xC1;
+    packet[1] = static_cast<BYTE>(HeaderLength + messageLength + 1);
+    packet[2] = 0x00;
+    memcpy(packet + 3, characterText.data(), characterLength);
+    memcpy(packet + HeaderLength, messageText.data(), messageLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, packet[1]);
+#else
     static const auto dotnet_SendPublicChatMessage = LoadManagedSymbol<::SendPublicChatMessage>("SendPublicChatMessage");
     if (!dotnet_SendPublicChatMessage)
     {
@@ -61,6 +114,7 @@ void PacketFunctions_ClientToServer::SendPublicChatMessage(const char16_t* chara
     }
 
     dotnet_SendPublicChatMessage(this->GetHandle(), character, message);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWhisperMessage(const char16_t* receiverName, const char16_t* message)
@@ -1182,6 +1236,11 @@ void PacketFunctions_ClientToServer::SendFocusCharacter(const char16_t* name)
 
 void PacketFunctions_ClientToServer::SendIncreaseCharacterStatPoint(CharacterStatAttribute statType)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the stat point request is written here.
+    const BYTE packet[5] = { 0xC3, 0x05, 0xF3, 0x06, static_cast<BYTE>(statType) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendIncreaseCharacterStatPoint = LoadManagedSymbol<::SendIncreaseCharacterStatPoint>("SendIncreaseCharacterStatPoint");
     if (!dotnet_SendIncreaseCharacterStatPoint)
     {
@@ -1189,6 +1248,7 @@ void PacketFunctions_ClientToServer::SendIncreaseCharacterStatPoint(CharacterSta
     }
 
     dotnet_SendIncreaseCharacterStatPoint(this->GetHandle(), statType);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendInventoryRequest()

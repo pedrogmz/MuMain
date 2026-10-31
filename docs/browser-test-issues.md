@@ -21,8 +21,8 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 |----|--------|------|-----------|--------|
 | BUG-001 | No hay recarga automática de vida | Cliente / servidor | Media | Abierto |
 | BUG-002 | La tecla `M` no abre el mapa de transporte | Cliente (input/UI) | Media | Abierto |
-| BUG-003 | No se envían mensajes por el chat | Cliente (input/red) | Alta | Abierto |
-| BUG-004 | El botón `+` de estadísticas no sube puntos | Cliente (UI/red) | Alta | Abierto |
+| BUG-003 | No se envían mensajes por el chat | Cliente (input/red) | Alta | Corregido (pendiente de probar) |
+| BUG-004 | El botón `+` de estadísticas no sube puntos | Cliente (UI/red) | Alta | Corregido (pendiente de probar) |
 | BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/red) | Alta | Corregido (pendiente de probar) |
 | BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Abierto |
 | BUG-007 | NPCs y monstruos de Lorencia no aparecen (spawn correcto en servidor) | Cliente (protocolo/viewport) | Alta | Corregido |
@@ -96,22 +96,39 @@ retransmite.
 
 **Actual.** No se envía nada.
 
-**Pistas / hipótesis.**
+**Causa raíz.** `SendPublicChatMessage` no tenía rama nativa para Emscripten:
+como `LoadManagedSymbol` devuelve `nullptr` en WASM, la función era un no-op
+silencioso y el paquete nunca salía. Se confirmó con `proxy.log`: en la sesión
+del 2026-10-31 no apareció ningún `C1 xx 00` (chat público) aunque se escribieron
+mensajes.
 
-- Ruta de envío: `src/source/Engine/Object/ZzzInterface.cpp` (~3506)
-  `SocketClient->ToGameServer()->SendPublicChatMessage(...)`.
-- Implementación del bridge: `src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
-  `SendPublicChatMessage` (~55) carga el símbolo gestionado
-  `SendPublicChatMessage`; si el símbolo no existe, la función no hace nada.
-- Entrada de chat: `src/source/UI/Chat/ChatInput.cpp` (`CheckChatText`) y la
-  ventana `INTERFACE_CHATINPUTBOX`.
-- Revisar si la caja de chat se abre y captura texto en WASM (teclado/IME), y si
-  el símbolo gestionado está disponible en el build.
+**Arreglo.** Se añadió una rama `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` que escribe el paquete
+C1 tal como lo define `PublicChatMessage` en `ClientToServerPackets.xml`:
 
-**Archivos probablemente implicados.**
-`src/source/UI/Chat/ChatInput.cpp`,
-`src/source/Engine/Object/ZzzInterface.cpp`,
-`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`,
+```
+C1 <longitud> 00 <nombre 10 bytes> <mensaje UTF-8> 00
+```
+
+- El nombre ocupa 10 bytes y se rellena con ceros.
+- El mensaje va en UTF-8 y termina en cero, igual que el paquete gestionado
+  (`GetRequiredSize` reserva `13 + bytes + 1`).
+- La conversión UTF-16 → UTF-8 se añadió como
+  `Core::Text::ToUtf8(const char16_t*)` en `src/source/Core/Text/Utf8.cpp`
+  (maneja pares sustitutos; los no emparejados se sustituyen por U+FFFD).
+- La longitud se limita a 255 bytes sin cortar un carácter UTF-8 a la mitad.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo con el cliente
+recargado: al enviar un mensaje debe aparecer `c1 <len> 00 ...` en `proxy.log`
+y el servidor debe reenviarlo al jugador.
+
+**Archivos implicados.**
+`src/source/UI/HUD/ChatInputBox.cpp`,
+`src/source/Engine/Object/ZzzInterface.cpp` (`SendMacroChat`),
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendPublicChatMessage`),
+`src/source/Core/Text/Utf8.cpp` (`ToUtf8(const char16_t*)`),
 `src/source/UI/Core/WindowSystem.cpp`.
 
 ## BUG-004 — El botón `+` de estadísticas no sube puntos
@@ -125,22 +142,33 @@ Vitalidad/Energía no sube el stat ni consume el punto.
 
 **Actual.** No cambia nada.
 
-**Pistas / hipótesis.**
+**Causa raíz.** `SendIncreaseCharacterStatPoint` tampoco tenía rama nativa para
+Emscripten, así que era un no-op: el botón actualizaba la UI local y el paquete
+nunca salía. Se confirmó con `proxy.log`: no aparecía ningún `C3 05 F3 06`.
 
-- UI: `src/source/UI/Character/CharacterInfoWindow.cpp` `RmlClickIncreaseStat`
-  (~302) → `SendIncreaseCharacterStatPoint`.
-- Bridge: `src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
-  `SendIncreaseCharacterStatPoint` (~1107).
-- Respuesta del servidor: `ReceiveAddPointExtended` en
-  `src/source/Network/Server/WSclient.cpp` (~7006).
-- Revisar si el evento RmlUi del botón se dispara (los botones son
-  `#btn_stat_str`, etc.), si el símbolo gestionado se carga y si el servidor
-  acepta la petición (nivel/puntos).
+**Arreglo.** Se añadió una rama `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` con el formato de
+`IncreaseCharacterStatPoint` (`C3HeaderWithSubCode`, longitud 5):
 
-**Archivos probablemente implicados.**
+```
+C3 05 F3 06 <StatType>
+```
+
+`StatType` es el valor del enum `CharacterStatAttribute` que ya usa la UI:
+`0` Fuerza, `1` Agilidad, `2` Vitalidad, `3` Energía, `4` Liderazgo. El servidor
+valida que haya un punto de nivel disponible y responde con
+`ReceiveAddPointExtended`, que ya actualiza los stats en el cliente.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo con el cliente
+recargado: al pulsar `+` debe aparecer `c3 05 f3 06 ...` en `proxy.log` y llegar
+la respuesta del servidor con el stat actualizado.
+
+**Archivos implicados.**
 `src/source/UI/Character/CharacterInfoWindow.cpp`,
-`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`,
-`src/source/Network/Server/WSclient.cpp`.
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp`
+(`SendIncreaseCharacterStatPoint`),
+`src/source/Network/Server/WSclient.cpp` (`ReceiveAddPointExtended`).
 
 ## BUG-005 — No se puede desequipar un item; queda anclado al cursor
 
@@ -408,17 +436,16 @@ cliente recargado, buscando en `proxy.log`:
 La misma limitación que causaba BUG-007 afecta a casi todos los paquetes
 cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
 `nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007), el
-movimiento de items (BUG-005), la interacción con NPCs (BUG-008) y las acciones
-de sus tiendas (BUG-009). Chat, puntos de estadísticas y logout usan el mismo
-patrón y necesitan una rama nativa `#ifdef __EMSCRIPTEN__`. Antes de tocar la UI
-conviene comprobar en `proxy.log` si el paquete sale o no: si no sale, el
-problema está en el bridge, no en el botón.
+movimiento de items (BUG-005), la interacción con NPCs (BUG-008), las acciones
+de sus tiendas (BUG-009), el chat público (BUG-003) y los puntos de estadísticas
+(BUG-004). El logout sigue usando el mismo patrón y necesita una rama nativa
+`#ifdef __EMSCRIPTEN__`. Antes de tocar la UI conviene comprobar en `proxy.log`
+si el paquete sale o no: si no sale, el problema está en el bridge, no en el
+botón.
 
 ## Prioridad sugerida
 
-1. **BUG-003 y BUG-004**: serializadores nativos de `PublicChatMessage`
-   (C1 `0x00`) e `IncreaseCharacterStatPoint` (C3 `F3 06`).
-2. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
+1. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
    revisar aparte el cierre de ventana de Exit Game.
-3. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
+2. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
    el paquete de regeneración llegue y que el input de teclado llegue al canvas.

@@ -69,3 +69,19 @@ TEST_CASE("IsValidUtf8 refuses a character cut short and a byte that continues n
     CHECK_FALSE(IsValidUtf8("Drag\xC3\xA3o \xC0\xAF"
                             " Dragon"));
 }
+
+TEST_CASE("ToUtf8 converts UTF-16 text, including surrogate pairs [text][utf8]")
+{
+    CHECK(Core::Text::ToUtf8(static_cast<const char16_t*>(nullptr)).empty());
+    CHECK(Core::Text::ToUtf8(u"").empty());
+    CHECK(Core::Text::ToUtf8(u"Baz") == "Baz");
+    // U+00E3 in two bytes.
+    CHECK(Core::Text::ToUtf8(u"Drag\u00E3o") == "Drag\xC3\xA3o");
+    // An emoji as a surrogate pair in UTF-16 and four bytes in UTF-8.
+    CHECK(Core::Text::ToUtf8(u"Dragon \U0001F409") == "Dragon \xF0\x9F\x90\x89");
+
+    const char16_t unpairedHigh[] = {0xD800, 0};
+    const char16_t unpairedLow[] = {0xDC00, 0};
+    CHECK(Core::Text::ToUtf8(unpairedHigh) == "\xEF\xBF\xBD");
+    CHECK(Core::Text::ToUtf8(unpairedLow) == "\xEF\xBF\xBD");
+}

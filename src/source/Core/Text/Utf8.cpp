@@ -107,6 +107,50 @@ std::size_t ValidUtf8LengthAtStart(std::string_view text)
     }
     return IsAllowedCodePoint(codePoint, length) ? length : 0;
 }
+
+// The UTF-16 surrogate ranges. A high surrogate followed by a low one encode a
+// character above the Basic Multilingual Plane; an unpaired one is invalid.
+constexpr char32_t FirstHighSurrogate = 0xD800;
+constexpr char32_t LastHighSurrogate = 0xDBFF;
+constexpr char32_t FirstLowSurrogate = 0xDC00;
+constexpr char32_t SupplementaryPlaneBase = 0x10000;
+constexpr unsigned SurrogatePayloadBits = 10;
+constexpr char32_t ReplacementCharacter = 0xFFFD;
+
+// The largest code point of the one-, two- and three-byte UTF-8 forms.
+constexpr char32_t Utf8TwoByteLimit = 0x80;
+constexpr char32_t Utf8ThreeByteLimit = 0x800;
+constexpr char32_t Utf8FourByteLimit = 0x10000;
+
+// Appends the RFC 3629 encoding of a valid code point.
+void AppendUtf8(char32_t codePoint, std::string& target)
+{
+    if (codePoint < Utf8TwoByteLimit)
+    {
+        target.push_back(static_cast<char>(codePoint));
+        return;
+    }
+
+    if (codePoint < Utf8ThreeByteLimit)
+    {
+        target.push_back(static_cast<char>(0xC0 | (codePoint >> 6)));
+        target.push_back(static_cast<char>(0x80 | (codePoint & Utf8ContinuationPayloadMask)));
+        return;
+    }
+
+    if (codePoint < Utf8FourByteLimit)
+    {
+        target.push_back(static_cast<char>(0xE0 | (codePoint >> 12)));
+        target.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & Utf8ContinuationPayloadMask)));
+        target.push_back(static_cast<char>(0x80 | (codePoint & Utf8ContinuationPayloadMask)));
+        return;
+    }
+
+    target.push_back(static_cast<char>(0xF0 | (codePoint >> 18)));
+    target.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & Utf8ContinuationPayloadMask)));
+    target.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & Utf8ContinuationPayloadMask)));
+    target.push_back(static_cast<char>(0x80 | (codePoint & Utf8ContinuationPayloadMask)));
+}
 } // namespace
 
 std::string Core::Text::ToUtf8(const wchar_t* text)
@@ -130,6 +174,42 @@ std::string Core::Text::ToUtf8(const wchar_t* text)
     }
 
     return std::string(buffer.data(), static_cast<std::size_t>(written - 1));
+}
+
+std::string Core::Text::ToUtf8(const char16_t* text)
+{
+    if (text == nullptr)
+    {
+        return {};
+    }
+
+    std::string result;
+    for (const char16_t* current = text; *current != u'\0'; ++current)
+    {
+        auto codePoint = static_cast<char32_t>(*current);
+        if (codePoint >= FirstHighSurrogate && codePoint <= LastHighSurrogate)
+        {
+            const auto low = static_cast<char32_t>(*(current + 1));
+            if (low < FirstLowSurrogate || low > LastSurrogate)
+            {
+                codePoint = ReplacementCharacter;
+            }
+            else
+            {
+                codePoint = SupplementaryPlaneBase + ((codePoint - FirstHighSurrogate) << SurrogatePayloadBits) +
+                            (low - FirstLowSurrogate);
+                ++current;
+            }
+        }
+        else if (codePoint >= FirstLowSurrogate && codePoint <= LastSurrogate)
+        {
+            codePoint = ReplacementCharacter;
+        }
+
+        AppendUtf8(codePoint, result);
+    }
+
+    return result;
 }
 
 std::wstring Core::Text::FromUtf8(const std::string& text)

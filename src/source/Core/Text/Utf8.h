@@ -14,6 +14,10 @@ namespace Core::Text
 // A null, empty or unconvertible source yields an empty string.
 [[nodiscard]] std::string ToUtf8(const wchar_t* text);
 
+// The same for the UTF-16 text which crosses the managed bridge boundary
+// (chat messages and character names). Unpaired surrogates become U+FFFD.
+[[nodiscard]] std::string ToUtf8(const char16_t* text);
+
 // The other direction, for text that arrives from outside the game (a
 // file path a script asked a screenshot to be written to, for example).
 [[nodiscard]] std::wstring FromUtf8(const std::string& text);
