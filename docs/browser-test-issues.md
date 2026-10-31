@@ -493,6 +493,10 @@ de sus tiendas (BUG-009), el chat público (BUG-003), los puntos de estadística
 tocar la UI conviene comprobar en `proxy.log` si el paquete sale o no: si no
 sale, el problema está en el bridge, no en el botón.
 
+El listado de wrappers que aún no tienen rama nativa, con su paquete y sus
+llamadas, está en
+[`wasm-client-packet-audit.md`](wasm-client-packet-audit.md).
+
 ## Prioridad sugerida
 
 1. **BUG-001**: regeneración de HP; primero comprobar en `proxy.log` si el
