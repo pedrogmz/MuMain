@@ -109,6 +109,17 @@ void CSysMenuWin::ExitGame()
 {
     g_ErrorReport.Write(L"> Menu - Exit game.");
     g_ErrorReport.WriteCurrentTime();
+
+    // Tell the game server first, so it releases the player instead of leaving the
+    // session open until the socket times out. The world's game-over menu already
+    // does this before requesting the shutdown.
+    if (SocketClient != nullptr && SocketClient->ToGameServer() != nullptr)
+    {
+        LogOut = true;
+        SocketClient->ToGameServer()->SendLogOut(LogOutType::CloseGame);
+        g_ConsoleDebug->Write(MCD_SEND, L"0xF1 [SendRequestLogOut] 0");
+    }
+
     ::PostMessage(g_hWnd, WM_CLOSE, 0, 0);
 }
 

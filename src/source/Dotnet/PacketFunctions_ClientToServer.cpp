@@ -163,6 +163,11 @@ void PacketFunctions_ClientToServer::SendLogin075(const BYTE* username, uint32_t
 
 void PacketFunctions_ClientToServer::SendLogOut(LogOutType type)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the logout request is written here.
+    const BYTE packet[5] = { 0xC3, 0x05, 0xF1, 0x02, static_cast<BYTE>(type) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLogOut = LoadManagedSymbol<::SendLogOut>("SendLogOut");
     if (!dotnet_SendLogOut)
     {
@@ -170,6 +175,7 @@ void PacketFunctions_ClientToServer::SendLogOut(LogOutType type)
     }
 
     dotnet_SendLogOut(this->GetHandle(), type);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLogOutByCheatDetection(BYTE param, BYTE type)

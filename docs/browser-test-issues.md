@@ -24,7 +24,7 @@ stack de OpenMU. Sirve como lista de trabajo para corregirlos poco a poco.
 | BUG-003 | No se envían mensajes por el chat | Cliente (input/red) | Alta | Corregido (pendiente de probar) |
 | BUG-004 | El botón `+` de estadísticas no sube puntos | Cliente (UI/red) | Alta | Corregido (pendiente de probar) |
 | BUG-005 | No se puede desequipar un item; queda anclado al cursor | Cliente (inventario/red) | Alta | Corregido (pendiente de probar) |
-| BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Abierto |
+| BUG-006 | El menú de escape: Switch Character / Select Server no hacen nada; Exit Game se comporta raro | Cliente (UI/escenas) | Media | Corregido (pendiente de probar) |
 | BUG-007 | NPCs y monstruos de Lorencia no aparecen (spawn correcto en servidor) | Cliente (protocolo/viewport) | Alta | Corregido |
 | BUG-008 | Al hacer clic en un NPC no se abre el diálogo ni ocurre ninguna acción | Cliente (protocolo/NPC) | Alta | Corregido (pendiente de probar) |
 | BUG-009 | Comprar, vender, reparar o pedir buff a un NPC no hace nada | Cliente (protocolo/NPC) | Alta | Corregido (pendiente de probar) |
@@ -222,24 +222,55 @@ cierra sesión y vuelve a la lista de servidores; Exit Game cierra el juego.
 **Actual.** Los dos primeros no responden; el tercero se comporta de forma
 inesperada.
 
-**Pistas / hipótesis.**
+**Causa raíz.** `SendLogOut` no tenía rama nativa para Emscripten, así que era
+un no-op: `Switch Character`, `Choose Server` y `Select Server` marcaban
+`LogOut = true`, pero el servidor nunca recibía la petición y la sesión seguía
+abierta, por lo que el cliente se quedaba esperando. Se confirmó con
+`proxy.log`: no aparecía ningún `C3 05 F1 02` en el tráfico C→S.
 
-- `src/source/UI/Windows/SysMenuWin.cpp`:
-  - `ExitGame` (~108) usa `::PostMessage(g_hWnd, WM_CLOSE, 0, 0)`. En WASM no hay
-  una ventana Win32 real; el shim de `PostMessage`/`WM_CLOSE` puede no mapear al
-  cierre del navegador, de ahí el comportamiento raro.
-  - `SelectServer` (~115) hace `LogOut = true` y
-    `SendLogOut(LogOutType::BackToServerSelection)`; revisar si el flujo de
-    reconexión al connect server funciona en el cliente web.
-- Revisar si "Switch Character" tiene handler registrado y si el botón está
-  oculto/deshabilitado según `m_bSelectServerEnabled` (solo en
-  `CHARACTER_SCENE`).
+Además, el `Exit Game` del menú de escape solo hacía
+`PostMessage(g_hWnd, WM_CLOSE, 0, 0)`, sin avisar antes al servidor.
 
-**Archivos probablemente implicados.**
-`src/source/UI/Windows/SysMenuWin.cpp`,
-`src/source/Scenes/SceneManager.cpp`,
-`src/source/Dotnet/Connection.cpp`,
-`src/source/UI/Windows/ServerSelWin.cpp`.
+**Arreglo.** Se añadió la rama `__EMSCRIPTEN__` en
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` con el formato de
+`LogOut` (`C3HeaderWithSubCode`, longitud 5):
+
+```
+C3 05 F1 02 <LogOutType>
+```
+
+`LogOutType`: `0` cerrar el juego, `1` volver a la selección de personaje, `2`
+volver a la selección de servidor. Con eso funcionan tanto los botones del menú
+de game over (`CustomMessageBox`) como `SelectServer` del menú de escape.
+
+También se actualizó `CSysMenuWin::ExitGame`
+(`src/source/UI/Windows/SysMenuWin.cpp`) para enviar
+`SendLogOut(LogOutType::CloseGame)` antes de `WM_CLOSE`, igual que ya hacía el
+menú de game over. Así el servidor libera al jugador en vez de dejar la sesión
+abierta hasta que expire el socket.
+
+**Verificación.** El cliente compila para WebAssembly y el build despliega en
+`openmu-browser-stack/public`. Queda pendiente confirmarlo con el cliente
+recargado, buscando en `proxy.log`:
+
+- `Switch Character`: `c3 05 f1 02 01` y transición a la lista de personajes;
+- `Select Server`: `c3 05 f1 02 02` y vuelta a la lista de servidores;
+- `Exit Game`: `c3 05 f1 02 00`.
+
+**Nota sobre Exit Game en el navegador.** En WASM `PostMessage(WM_CLOSE)` se
+traduce en `SDL_EVENT_QUIT`, que pone `Destroy = true` y llama a
+`emscripten_cancel_main_loop()`. El bucle se detiene y el canvas conserva el
+último frame; el navegador no permite cerrar la pestaña desde el juego, así que
+hay que cerrarla a mano. El `ShutdownRuntime` completo solo se ejecuta en las
+builds nativas. Esto es una limitación del entorno web, no del logout: la sesión
+del servidor sí se cierra ahora correctamente.
+
+**Archivos implicados.**
+`src/source/Dotnet/PacketFunctions_ClientToServer.cpp` (`SendLogOut`),
+`src/source/UI/Windows/SysMenuWin.cpp` (`ExitGame`, `SelectServer`),
+`src/source/UI/Dialogs/CustomMessageBox.cpp` (Switch Character / Choose Server /
+Exit),
+`src/source/Network/Server/WSclient.cpp` (`ReceiveLogOut`).
 
 ## BUG-007 — NPCs y monstruos de Lorencia no aparecen
 
@@ -437,15 +468,13 @@ La misma limitación que causaba BUG-007 afecta a casi todos los paquetes
 cliente→servidor del juego: `LoadManagedSymbol` es un stub que devuelve
 `nullptr` en Emscripten. Ya se corrigió para el movimiento (BUG-007), el
 movimiento de items (BUG-005), la interacción con NPCs (BUG-008), las acciones
-de sus tiendas (BUG-009), el chat público (BUG-003) y los puntos de estadísticas
-(BUG-004). El logout sigue usando el mismo patrón y necesita una rama nativa
-`#ifdef __EMSCRIPTEN__`. Antes de tocar la UI conviene comprobar en `proxy.log`
-si el paquete sale o no: si no sale, el problema está en el bridge, no en el
-botón.
+de sus tiendas (BUG-009), el chat público (BUG-003), los puntos de estadísticas
+(BUG-004) y el logout (BUG-006). Antes de tocar la UI conviene comprobar en
+`proxy.log` si el paquete sale o no: si no sale, el problema está en el bridge,
+no en el botón.
 
 ## Prioridad sugerida
 
-1. **BUG-006**: `LogOut` (C3 `F1 02`) para Select Server / Switch Character;
-   revisar aparte el cierre de ventana de Exit Game.
-2. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
+1. **BUG-001 y BUG-002**: regeneración de HP y atajo `M`; primero descartar que
    el paquete de regeneración llegue y que el input de teclado llegue al canvas.
+   Ninguno de los dos es un problema del bridge de paquetes.
