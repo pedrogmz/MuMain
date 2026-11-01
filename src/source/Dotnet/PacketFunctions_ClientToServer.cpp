@@ -887,6 +887,12 @@ void PacketFunctions_ClientToServer::SendCrywolfContractRequest(uint16_t statueI
 
 void PacketFunctions_ClientToServer::SendCrywolfChaosRateBenefitRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the crywolf chaos rate benefit request is
+    // written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xBD, 0x09 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCrywolfChaosRateBenefitRequest = LoadManagedSymbol<::SendCrywolfChaosRateBenefitRequest>("SendCrywolfChaosRateBenefitRequest");
     if (!dotnet_SendCrywolfChaosRateBenefitRequest)
     {
@@ -894,6 +900,7 @@ void PacketFunctions_ClientToServer::SendCrywolfChaosRateBenefitRequest()
     }
 
     dotnet_SendCrywolfChaosRateBenefitRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWhiteAngelItemRequest()
@@ -1085,6 +1092,20 @@ void PacketFunctions_ClientToServer::SendCashShopEventItemListRequest(uint32_t c
 
 void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the unlock request is written here. The pin
+    // is a little-endian short.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0x83,
+        0x00,
+        static_cast<BYTE>(pin & 0xFF),
+        static_cast<BYTE>((pin >> 8) & 0xFF),
+        0x00,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendUnlockVault = LoadManagedSymbol<::SendUnlockVault>("SendUnlockVault");
     if (!dotnet_SendUnlockVault)
     {
@@ -1092,10 +1113,38 @@ void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin)
     }
 
     dotnet_SendUnlockVault(this->GetHandle(), pin);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSetVaultPin(uint16_t pin, const char16_t* password)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the set-pin request is written here. The pin
+    // is a little-endian short and the account password is a 20-byte UTF-8
+    // field.
+    constexpr std::size_t PasswordFieldLength = 20;
+    constexpr std::size_t PasswordOffset = 6;
+
+    if (password == nullptr)
+    {
+        return;
+    }
+
+    const std::string passwordText = Core::Text::ToUtf8(password);
+    const std::size_t passwordLength = Utf8LengthAtMost(passwordText, PasswordFieldLength);
+
+    BYTE packet[27] = {
+        0xC1,
+        0x1B,
+        0x83,
+        0x01,
+        static_cast<BYTE>(pin & 0xFF),
+        static_cast<BYTE>((pin >> 8) & 0xFF),
+    };
+    memcpy(packet + PasswordOffset, passwordText.data(), passwordLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSetVaultPin = LoadManagedSymbol<::SendSetVaultPin>("SendSetVaultPin");
     if (!dotnet_SendSetVaultPin)
     {
@@ -1103,10 +1152,30 @@ void PacketFunctions_ClientToServer::SendSetVaultPin(uint16_t pin, const char16_
     }
 
     dotnet_SendSetVaultPin(this->GetHandle(), pin, password);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRemoveVaultPin(const char16_t* password)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the remove-pin request is written here. The
+    // account password is a 20-byte UTF-8 field after the two padding bytes.
+    constexpr std::size_t PasswordFieldLength = 20;
+    constexpr std::size_t PasswordOffset = 6;
+
+    if (password == nullptr)
+    {
+        return;
+    }
+
+    const std::string passwordText = Core::Text::ToUtf8(password);
+    const std::size_t passwordLength = Utf8LengthAtMost(passwordText, PasswordFieldLength);
+
+    BYTE packet[27] = { 0xC1, 0x1B, 0x83, 0x02 };
+    memcpy(packet + PasswordOffset, passwordText.data(), passwordLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRemoveVaultPin = LoadManagedSymbol<::SendRemoveVaultPin>("SendRemoveVaultPin");
     if (!dotnet_SendRemoveVaultPin)
     {
@@ -1114,10 +1183,16 @@ void PacketFunctions_ClientToServer::SendRemoveVaultPin(const char16_t* password
     }
 
     dotnet_SendRemoveVaultPin(this->GetHandle(), password);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendVaultClosed()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, closing the vault dialog is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x82 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendVaultClosed = LoadManagedSymbol<::SendVaultClosed>("SendVaultClosed");
     if (!dotnet_SendVaultClosed)
     {
@@ -1125,10 +1200,26 @@ void PacketFunctions_ClientToServer::SendVaultClosed()
     }
 
     dotnet_SendVaultClosed(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendVaultMoveMoneyRequest(VaultMoneyMoveDirection direction, uint32_t amount)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the vault money move is written here. The
+    // amount is a little-endian integer.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0x81,
+        static_cast<BYTE>(direction),
+        static_cast<BYTE>(amount & 0xFF),
+        static_cast<BYTE>((amount >> 8) & 0xFF),
+        static_cast<BYTE>((amount >> 16) & 0xFF),
+        static_cast<BYTE>((amount >> 24) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendVaultMoveMoneyRequest = LoadManagedSymbol<::SendVaultMoveMoneyRequest>("SendVaultMoveMoneyRequest");
     if (!dotnet_SendVaultMoveMoneyRequest)
     {
@@ -1136,10 +1227,24 @@ void PacketFunctions_ClientToServer::SendVaultMoveMoneyRequest(VaultMoneyMoveDir
     }
 
     dotnet_SendVaultMoveMoneyRequest(this->GetHandle(), direction, amount);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLahapJewelMixRequest(MixType operation, ItemType item, StackSize mixingStackSize, BYTE unmixingSourceSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the Lahap jewel mix request is written here.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0xBC,
+        static_cast<BYTE>(operation),
+        static_cast<BYTE>(item),
+        static_cast<BYTE>(mixingStackSize),
+        unmixingSourceSlot,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLahapJewelMixRequest = LoadManagedSymbol<::SendLahapJewelMixRequest>("SendLahapJewelMixRequest");
     if (!dotnet_SendLahapJewelMixRequest)
     {
@@ -1147,6 +1252,7 @@ void PacketFunctions_ClientToServer::SendLahapJewelMixRequest(MixType operation,
     }
 
     dotnet_SendLahapJewelMixRequest(this->GetHandle(), operation, item, mixingStackSize, unmixingSourceSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPartyListRequest()
@@ -2031,6 +2137,11 @@ void PacketFunctions_ClientToServer::SendItemRepair(BYTE inventoryItemSlot)
 
 void PacketFunctions_ClientToServer::SendChaosMachineMixRequest(ChaosMachineMixType mixType, BYTE socketSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the chaos machine mix request is written here.
+    const BYTE packet[5] = { 0xC1, 0x05, 0x86, static_cast<BYTE>(mixType), socketSlot };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChaosMachineMixRequest = LoadManagedSymbol<::SendChaosMachineMixRequest>("SendChaosMachineMixRequest");
     if (!dotnet_SendChaosMachineMixRequest)
     {
@@ -2038,10 +2149,16 @@ void PacketFunctions_ClientToServer::SendChaosMachineMixRequest(ChaosMachineMixT
     }
 
     dotnet_SendChaosMachineMixRequest(this->GetHandle(), mixType, socketSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCraftingDialogCloseRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, closing the crafting dialog is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x87 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCraftingDialogCloseRequest = LoadManagedSymbol<::SendCraftingDialogCloseRequest>("SendCraftingDialogCloseRequest");
     if (!dotnet_SendCraftingDialogCloseRequest)
     {
@@ -2049,6 +2166,7 @@ void PacketFunctions_ClientToServer::SendCraftingDialogCloseRequest()
     }
 
     dotnet_SendCraftingDialogCloseRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFriendListRequest()
@@ -2130,6 +2248,12 @@ void PacketFunctions_ClientToServer::SendChatRoomInvitationRequest(const char16_
 
 void PacketFunctions_ClientToServer::SendLegacyQuestStateRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the legacy quest state request is written
+    // here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0xA0 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLegacyQuestStateRequest = LoadManagedSymbol<::SendLegacyQuestStateRequest>("SendLegacyQuestStateRequest");
     if (!dotnet_SendLegacyQuestStateRequest)
     {
@@ -2137,10 +2261,16 @@ void PacketFunctions_ClientToServer::SendLegacyQuestStateRequest()
     }
 
     dotnet_SendLegacyQuestStateRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLegacyQuestStateSetRequest(BYTE questNumber, LegacyQuestState newState)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the legacy quest state change is written here.
+    const BYTE packet[5] = { 0xC1, 0x05, 0xA2, questNumber, static_cast<BYTE>(newState) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLegacyQuestStateSetRequest = LoadManagedSymbol<::SendLegacyQuestStateSetRequest>("SendLegacyQuestStateSetRequest");
     if (!dotnet_SendLegacyQuestStateSetRequest)
     {
@@ -2148,10 +2278,25 @@ void PacketFunctions_ClientToServer::SendLegacyQuestStateSetRequest(BYTE questNu
     }
 
     dotnet_SendLegacyQuestStateSetRequest(this->GetHandle(), questNumber, newState);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPetCommandRequest(PetType petType, PetCommandMode commandMode, uint16_t targetId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the pet command is written here. The target
+    // id is a big-endian short.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0xA7,
+        static_cast<BYTE>(petType),
+        static_cast<BYTE>(commandMode),
+        static_cast<BYTE>((targetId >> 8) & 0xFF),
+        static_cast<BYTE>(targetId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPetCommandRequest = LoadManagedSymbol<::SendPetCommandRequest>("SendPetCommandRequest");
     if (!dotnet_SendPetCommandRequest)
     {
@@ -2159,10 +2304,16 @@ void PacketFunctions_ClientToServer::SendPetCommandRequest(PetType petType, PetC
     }
 
     dotnet_SendPetCommandRequest(this->GetHandle(), petType, commandMode, targetId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPetInfoRequest(PetType pet, StorageType storage, BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the pet info request is written here.
+    const BYTE packet[6] = { 0xC1, 0x06, 0xA9, static_cast<BYTE>(pet), static_cast<BYTE>(storage), itemSlot };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPetInfoRequest = LoadManagedSymbol<::SendPetInfoRequest>("SendPetInfoRequest");
     if (!dotnet_SendPetInfoRequest)
     {
@@ -2170,6 +2321,7 @@ void PacketFunctions_ClientToServer::SendPetInfoRequest(PetType pet, StorageType
     }
 
     dotnet_SendPetInfoRequest(this->GetHandle(), pet, storage, itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendIllusionTempleEnterRequest(BYTE mapNumber, BYTE itemSlot)
@@ -2284,6 +2436,22 @@ void PacketFunctions_ClientToServer::SendMuHelperSaveDataRequest(const BYTE* hel
 
 void PacketFunctions_ClientToServer::SendQuestSelectRequest(uint16_t questNumber, uint16_t questGroup, BYTE selectedTextIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest select request is written here. The
+    // quest number and group are little-endian shorts.
+    const BYTE packet[9] = {
+        0xC1,
+        0x09,
+        0xF6,
+        0x0A,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+        selectedTextIndex,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestSelectRequest = LoadManagedSymbol<::SendQuestSelectRequest>("SendQuestSelectRequest");
     if (!dotnet_SendQuestSelectRequest)
     {
@@ -2291,10 +2459,26 @@ void PacketFunctions_ClientToServer::SendQuestSelectRequest(uint16_t questNumber
     }
 
     dotnet_SendQuestSelectRequest(this->GetHandle(), questNumber, questGroup, selectedTextIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestProceedRequest(uint16_t questNumber, uint16_t questGroup, QuestProceedAction proceedAction)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest proceed request is written here.
+    const BYTE packet[9] = {
+        0xC1,
+        0x09,
+        0xF6,
+        0x0B,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+        static_cast<BYTE>(proceedAction),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestProceedRequest = LoadManagedSymbol<::SendQuestProceedRequest>("SendQuestProceedRequest");
     if (!dotnet_SendQuestProceedRequest)
     {
@@ -2302,10 +2486,25 @@ void PacketFunctions_ClientToServer::SendQuestProceedRequest(uint16_t questNumbe
     }
 
     dotnet_SendQuestProceedRequest(this->GetHandle(), questNumber, questGroup, proceedAction);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestCompletionRequest(uint16_t questNumber, uint16_t questGroup)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest completion request is written here.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0xF6,
+        0x0D,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestCompletionRequest = LoadManagedSymbol<::SendQuestCompletionRequest>("SendQuestCompletionRequest");
     if (!dotnet_SendQuestCompletionRequest)
     {
@@ -2313,10 +2512,25 @@ void PacketFunctions_ClientToServer::SendQuestCompletionRequest(uint16_t questNu
     }
 
     dotnet_SendQuestCompletionRequest(this->GetHandle(), questNumber, questGroup);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestCancelRequest(uint16_t questNumber, uint16_t questGroup)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest cancel request is written here.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0xF6,
+        0x0F,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestCancelRequest = LoadManagedSymbol<::SendQuestCancelRequest>("SendQuestCancelRequest");
     if (!dotnet_SendQuestCancelRequest)
     {
@@ -2324,10 +2538,25 @@ void PacketFunctions_ClientToServer::SendQuestCancelRequest(uint16_t questNumber
     }
 
     dotnet_SendQuestCancelRequest(this->GetHandle(), questNumber, questGroup);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestClientActionRequest(uint16_t questNumber, uint16_t questGroup)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest client action is written here.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0xF6,
+        0x10,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestClientActionRequest = LoadManagedSymbol<::SendQuestClientActionRequest>("SendQuestClientActionRequest");
     if (!dotnet_SendQuestClientActionRequest)
     {
@@ -2335,10 +2564,16 @@ void PacketFunctions_ClientToServer::SendQuestClientActionRequest(uint16_t quest
     }
 
     dotnet_SendQuestClientActionRequest(this->GetHandle(), questNumber, questGroup);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendActiveQuestListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the active quest list request is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF6, 0x1A };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendActiveQuestListRequest = LoadManagedSymbol<::SendActiveQuestListRequest>("SendActiveQuestListRequest");
     if (!dotnet_SendActiveQuestListRequest)
     {
@@ -2346,10 +2581,25 @@ void PacketFunctions_ClientToServer::SendActiveQuestListRequest()
     }
 
     dotnet_SendActiveQuestListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestStateRequest(uint16_t questNumber, uint16_t questGroup)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the quest state request is written here.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0xF6,
+        0x1B,
+        static_cast<BYTE>(questNumber & 0xFF),
+        static_cast<BYTE>((questNumber >> 8) & 0xFF),
+        static_cast<BYTE>(questGroup & 0xFF),
+        static_cast<BYTE>((questGroup >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendQuestStateRequest = LoadManagedSymbol<::SendQuestStateRequest>("SendQuestStateRequest");
     if (!dotnet_SendQuestStateRequest)
     {
@@ -2357,10 +2607,17 @@ void PacketFunctions_ClientToServer::SendQuestStateRequest(uint16_t questNumber,
     }
 
     dotnet_SendQuestStateRequest(this->GetHandle(), questNumber, questGroup);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEventQuestStateListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the event quest state list request is written
+    // here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF6, 0x21 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEventQuestStateListRequest = LoadManagedSymbol<::SendEventQuestStateListRequest>("SendEventQuestStateListRequest");
     if (!dotnet_SendEventQuestStateListRequest)
     {
@@ -2368,10 +2625,16 @@ void PacketFunctions_ClientToServer::SendEventQuestStateListRequest()
     }
 
     dotnet_SendEventQuestStateListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendAvailableQuestsRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the available quests request is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xF6, 0x30 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendAvailableQuestsRequest = LoadManagedSymbol<::SendAvailableQuestsRequest>("SendAvailableQuestsRequest");
     if (!dotnet_SendAvailableQuestsRequest)
     {
@@ -2379,6 +2642,7 @@ void PacketFunctions_ClientToServer::SendAvailableQuestsRequest()
     }
 
     dotnet_SendAvailableQuestsRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendNpcBuffRequest()
