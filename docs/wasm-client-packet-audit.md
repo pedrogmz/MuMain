@@ -26,8 +26,9 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **94** siguen sin rama `__EMSCRIPTEN__`.
-- **99** ya tienen rama nativa:
+- **22** siguen sin rama `__EMSCRIPTEN__`, y ninguno tiene llamadas desde el
+  cliente.
+- **171** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -74,7 +75,13 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
   - Cartas y salas de chat (detalle abajo): `SendLetterDeleteRequest`,
     `SendLetterReadRequest`, `SendLetterSendRequest`, `SendChatRoomCreateRequest`,
     `SendChatRoomInvitationRequest`.
-- De los 94 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Eventos, cash shop, castle siege y MuHelper (detalle abajo): los 72 wrappers
+    con llamadas que quedaban, desde `SendMiniGameOpeningStateRequest` y
+    `SendCashShop*` hasta `SendCastleSiege*`, `SendDuel*`, `SendGens*`,
+    `SendIllusionTemple*`, `SendLuckyCoin*`, `SendCrywolf*`, `SendKanturu*`,
+    `SendBloodCastle*`, `SendDevilSquare*` y `SendMuHelper*`.
+- Los 22 wrappers pendientes no tienen ninguna llamada desde el cliente y se
+  dejan sin rama a propósito.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -220,15 +227,61 @@ cliente; la lista de cartas llega por otro camino.
 Queda pendiente probar en juego el envío, lectura y borrado de cartas, y la
 creación e invitación a salas de chat (requiere otro personaje).
 
-## Segunda capa (features completas)
+## Eventos, cash shop, castle siege y MuHelper (2026-11-01)
 
-Con el lote 2, el lote social completo y las cartas/salas de chat, la capa de
-paquetes de esos sistemas ya está cubierta; lo que falta de ellos es el flujo de
-UI en juego.
+Se portaron los 72 wrappers que quedaban con llamadas desde el cliente. Todas las
+ramas se generaron desde `ClientToServerPackets.xml` y se validaron la longitud,
+los bytes de cabecera y los índices de cada campo.
 
-- **Eventos y sistemas especiales**: Blood Castle, Devil Square, Chaos Castle,
-  Illusion Temple, Doppelganger, Lucky Coin, Gens, CryWolf, Kanturu, Castle
-  Siege, Cash Shop y MuHelper.
+- **Mini games y eventos de entrada**: `SendMiniGameOpeningStateRequest`,
+  `SendMiniGameEventCountRequest`, `SendBloodCastleEnterRequest`,
+  `SendDevilSquareEnterRequest`, `SendChaosCastleEnterRequest`,
+  `SendChaosCastlePositionSet`, `SendEventChipRegistrationRequest`,
+  `SendEventChipExitDialog`, `SendIllusionTempleEnterRequest`,
+  `SendIllusionTempleSkillRequest`, `SendIllusionTempleRewardRequest`,
+  `SendDoppelgangerEnterRequest`, `SendEnterEmpireGuardianEvent`,
+  `SendEnterMarketPlaceRequest`.
+- **Lucky Coin**: `SendLuckyCoinCountRequest`, `SendLuckyCoinRegistrationRequest`,
+  `SendLuckyCoinExchangeRequest`, `SendLuckyNumberRequest`.
+- **Gens**: `SendGensJoinRequest`, `SendGensLeaveRequest`, `SendGensRewardRequest`,
+  `SendGensRankingRequest`.
+- **CryWolf**: `SendCrywolfInfoRequest`, `SendCrywolfContractRequest`.
+- **Kanturu**: `SendKanturuInfoRequest`, `SendKanturuEnterRequest`.
+- **Temporada y NPCs especiales**: `SendSantaClausItemRequest`,
+  `SendWhiteAngelItemRequest`, `SendEnterOnWerewolfRequest`,
+  `SendEnterOnGatekeeperRequest`, `SendLeoHelperItemRequest`,
+  `SendMoveToDeviasBySnowmanRequest`.
+- **Duelos**: `SendDuelStartRequest`, `SendDuelStartResponse`,
+  `SendDuelStopRequest`, `SendDuelChannelJoinRequest`,
+  `SendDuelChannelQuitRequest`.
+- **Cash shop**: `SendCashShopPointInfoRequest`, `SendCashShopOpenState`,
+  `SendCashShopStorageListRequest`, `SendCashShopStorageItemConsumeRequest`,
+  `SendCashShopEventItemListRequest`, `SendCashShopItemBuyRequest`,
+  `SendCashShopItemGiftRequest`.
+- **Castle Siege**: `SendCastleSiegeStatusRequest`,
+  `SendCastleSiegeRegistrationRequest`, `SendCastleSiegeRegistrationStateRequest`,
+  `SendCastleSiegeUnregisterRequest`, `SendCastleSiegeMarkRegistration`,
+  `SendCastleSiegeDefenseBuyRequest`, `SendCastleSiegeDefenseRepairRequest`,
+  `SendCastleSiegeDefenseUpgradeRequest`, `SendCastleSiegeTaxInfoRequest`,
+  `SendCastleSiegeTaxChangeRequest`, `SendCastleSiegeTaxMoneyWithdraw`,
+  `SendCastleSiegeGateListRequest`, `SendCastleSiegeStatueListRequest`,
+  `SendCastleSiegeRegisteredGuildsListRequest`, `SendCastleOwnerListRequest`,
+  `SendCastleGuildCommand`, `SendToggleCastleGateRequest`,
+  `SendCastleSiegeHuntingZoneEntranceSetting`,
+  `SendCastleSiegeHuntingZoneEnterRequest`, `SendFireCatapultRequest`,
+  `SendWeaponExplosionRequest`, `SendGuildLogoOfCastleOwnerRequest`.
+- **MuHelper**: `SendMuHelperStatusChangeRequest`, `SendMuHelperSaveDataRequest`.
+- **Otros**: `SendChatCommandListRequest`, `SendResetCharacterPointRequest`,
+  `SendLogOutByCheatDetection`, `SendServerChangeAuthentication`.
+
+Queda pendiente probar en juego los eventos, el cash shop, Castle Siege (requiere
+un castillo activo) y el guardado de MuHelper.
+
+## Estado final
+
+Todos los wrappers con llamadas desde el cliente tienen rama nativa. Los 22 que
+siguen sin rama no se usan desde el cliente y se dejan así a propósito (ver la
+sección siguiente).
 
 ## Sin llamadas (no merece la pena portarlas)
 
@@ -249,88 +302,17 @@ UI en juego.
 3. **Lote social** (hecho el 2026-11-01): trade, party, guild, amigos y tienda
    personal.
 4. **Cartas y salas de chat** (hecho el 2026-11-01): el bloque de arriba.
-5. **Eventos/cash shop/castle siege/MuHelper**.
+5. **Eventos/cash shop/castle siege/MuHelper** (hecho el 2026-11-01): el bloque
+   de arriba.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 94 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 22 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
 | Llamadas | Función | Header | Código | Longitud |
 |---:|---|---|---|---|
-| 9 | `SendCashShopStorageListRequest` | C1HeaderWithSubCode | `D2/05` | 10 |
-| 8 | `SendMiniGameOpeningStateRequest` | C1Header | `91` | 5 |
-| 6 | `SendCashShopPointInfoRequest` | C1HeaderWithSubCode | `D2/01` | 4 |
-| 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
-| 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
-| 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
-| 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
-| 3 | `SendDuelStartRequest` | C3HeaderWithSubCode | `AA/01` | 16 |
-| 2 | `SendCastleSiegeRegistrationStateRequest` | C1HeaderWithSubCode | `B2/03` | 4 |
-| 2 | `SendCastleSiegeDefenseBuyRequest` | C1HeaderWithSubCode | `B2/05` | 12 |
-| 2 | `SendCastleSiegeDefenseRepairRequest` | C1HeaderWithSubCode | `B2/06` | 12 |
-| 2 | `SendCastleSiegeRegisteredGuildsListRequest` | C1Header | `B4` | 3 |
-| 2 | `SendWeaponExplosionRequest` | C1HeaderWithSubCode | `B7/04` | 6 |
-| 2 | `SendCrywolfInfoRequest` | C1HeaderWithSubCode | `BD/00` | 4 |
-| 2 | `SendCrywolfContractRequest` | C1HeaderWithSubCode | `BD/03` | 6 |
-| 2 | `SendSantaClausItemRequest` | C1HeaderWithSubCode | `D0/10` | 4 |
-| 2 | `SendCashShopStorageItemConsumeRequest` | C1HeaderWithSubCode | `D2/0B` | 15 |
-| 2 | `SendMuHelperStatusChangeRequest` | C1HeaderWithSubCode | `BF/51` | 5 |
-| 2 | `SendGensJoinRequest` | C1HeaderWithSubCode | `F8/01` | 5 |
-| 2 | `SendGensRewardRequest` | C1HeaderWithSubCode | `F8/09` | 5 |
-| 2 | `SendMiniGameEventCountRequest` | C1Header | `9F` | 4 |
-| 2 | `SendChaosCastleEnterRequest` | C1HeaderWithSubCode | `AF/01` | 6 |
-| 2 | `SendDuelStopRequest` | C3HeaderWithSubCode | `AA/03` | 4 |
-| 1 | `SendLogOutByCheatDetection` | C3HeaderWithSubCode | `F1/03` | 6 |
-| 1 | `SendResetCharacterPointRequest` | C1HeaderWithSubCode | `F2/00` | 4 |
-| 1 | `SendServerChangeAuthentication` | C3HeaderWithSubCode | `B1/01` | 69 |
-| 1 | `SendCastleSiegeStatusRequest` | C1HeaderWithSubCode | `B2/00` | 4 |
-| 1 | `SendCastleSiegeRegistrationRequest` | C1HeaderWithSubCode | `B2/01` | 4 |
-| 1 | `SendCastleSiegeUnregisterRequest` | C1HeaderWithSubCode | `B2/02` | 5 |
-| 1 | `SendCastleSiegeMarkRegistration` | C1HeaderWithSubCode | `B2/04` | 5 |
-| 1 | `SendCastleSiegeTaxInfoRequest` | C1HeaderWithSubCode | `B2/08` | 4 |
-| 1 | `SendCastleSiegeTaxMoneyWithdraw` | C1HeaderWithSubCode | `B2/10` | 8 |
-| 1 | `SendToggleCastleGateRequest` | C1HeaderWithSubCode | `B2/12` | 7 |
-| 1 | `SendCastleGuildCommand` | C1HeaderWithSubCode | `B2/1D` | 8 |
-| 1 | `SendCastleSiegeHuntingZoneEntranceSetting` | C1HeaderWithSubCode | `B2/1F` | 5 |
-| 1 | `SendCastleSiegeGateListRequest` | C1HeaderWithSubCode | `B3/01` | 4 |
-| 1 | `SendCastleSiegeStatueListRequest` | C1HeaderWithSubCode | `B3/02` | 4 |
-| 1 | `SendCastleOwnerListRequest` | C1Header | `B5` | 3 |
-| 1 | `SendFireCatapultRequest` | C1HeaderWithSubCode | `B7/01` | 7 |
-| 1 | `SendGuildLogoOfCastleOwnerRequest` | C1HeaderWithSubCode | `B9/02` | 4 |
-| 1 | `SendCastleSiegeHuntingZoneEnterRequest` | C1HeaderWithSubCode | `B9/05` | 8 |
-| 1 | `SendWhiteAngelItemRequest` | C1HeaderWithSubCode | `D0/03` | 4 |
-| 1 | `SendEnterOnWerewolfRequest` | C1HeaderWithSubCode | `D0/07` | 4 |
-| 1 | `SendEnterOnGatekeeperRequest` | C1HeaderWithSubCode | `D0/08` | 4 |
-| 1 | `SendLeoHelperItemRequest` | C1HeaderWithSubCode | `D0/09` | 4 |
-| 1 | `SendMoveToDeviasBySnowmanRequest` | C1HeaderWithSubCode | `D0/0A` | 4 |
-| 1 | `SendKanturuInfoRequest` | C1HeaderWithSubCode | `D1/00` | 4 |
-| 1 | `SendKanturuEnterRequest` | C1HeaderWithSubCode | `D1/01` | 4 |
-| 1 | `SendCashShopItemBuyRequest` | C1HeaderWithSubCode | `D2/03` | 23 |
-| 1 | `SendCashShopItemGiftRequest` | C1HeaderWithSubCode | `D2/04` | 234 |
-| 1 | `SendCashShopEventItemListRequest` | C1HeaderWithSubCode | `D2/13` | 8 |
-| 1 | `SendIllusionTempleEnterRequest` | C1HeaderWithSubCode | `BF/00` | 6 |
-| 1 | `SendIllusionTempleSkillRequest` | C1HeaderWithSubCode | `BF/02` | 8 |
-| 1 | `SendIllusionTempleRewardRequest` | C1HeaderWithSubCode | `BF/05` | 4 |
-| 1 | `SendLuckyCoinCountRequest` | C1HeaderWithSubCode | `BF/0B` | 4 |
-| 1 | `SendLuckyCoinRegistrationRequest` | C1HeaderWithSubCode | `BF/0C` | 4 |
-| 1 | `SendLuckyCoinExchangeRequest` | C1HeaderWithSubCode | `BF/0D` | 8 |
-| 1 | `SendDoppelgangerEnterRequest` | C1HeaderWithSubCode | `BF/0E` | 5 |
-| 1 | `SendEnterMarketPlaceRequest` | C1HeaderWithSubCode | `BF/17` | 4 |
-| 1 | `SendMuHelperSaveDataRequest` | C2Header | `AE` | 261 |
-| 1 | `SendEnterEmpireGuardianEvent` | C1HeaderWithSubCode | `F7/01` | 5 |
-| 1 | `SendGensLeaveRequest` | C1HeaderWithSubCode | `F8/03` | 4 |
-| 1 | `SendGensRankingRequest` | C1HeaderWithSubCode | `F8/0B` | 4 |
-| 1 | `SendDevilSquareEnterRequest` | C1Header | `90` | 5 |
-| 1 | `SendEventChipRegistrationRequest` | C1Header | `95` | 5 |
-| 1 | `SendLuckyNumberRequest` | C1Header | `9D` | 18 |
-| 1 | `SendBloodCastleEnterRequest` | C1Header | `9A` | 5 |
-| 1 | `SendChaosCastlePositionSet` | C1HeaderWithSubCode | `AF/02` | 6 |
-| 1 | `SendDuelStartResponse` | C3HeaderWithSubCode | `AA/02` | 17 |
-| 1 | `SendDuelChannelJoinRequest` | C3HeaderWithSubCode | `AA/07` | 5 |
-| 1 | `SendDuelChannelQuitRequest` | C3HeaderWithSubCode | `AA/09` | 4 |
-| 1 | `SendChatCommandListRequest` | C1HeaderWithSubCode | `F5/00` | 4 |
 | 0 | `SendLoginLongPassword` | C3HeaderWithSubCode | `F1/01` | 60 |
 | 0 | `SendLoginShortPassword` | C3HeaderWithSubCode | `F1/01` | 50 |
 | 0 | `SendLogin075` | C3HeaderWithSubCode | `F1/01` | 48 |
