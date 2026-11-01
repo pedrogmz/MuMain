@@ -2118,6 +2118,18 @@ void PacketFunctions_ClientToServer::SendSetTradeMoney(uint32_t amount)
 
 void PacketFunctions_ClientToServer::SendLetterDeleteRequest(uint16_t letterIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the letter delete request is written here.
+    const BYTE packet[6] = {
+        0xC1,
+        0x06,
+        0xC8,
+        0x00,
+        static_cast<BYTE>(letterIndex & 0xFF),
+        static_cast<BYTE>((letterIndex >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLetterDeleteRequest = LoadManagedSymbol<::SendLetterDeleteRequest>("SendLetterDeleteRequest");
     if (!dotnet_SendLetterDeleteRequest)
     {
@@ -2125,6 +2137,7 @@ void PacketFunctions_ClientToServer::SendLetterDeleteRequest(uint16_t letterInde
     }
 
     dotnet_SendLetterDeleteRequest(this->GetHandle(), letterIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLetterListRequest()
@@ -2140,6 +2153,53 @@ void PacketFunctions_ClientToServer::SendLetterListRequest()
 
 void PacketFunctions_ClientToServer::SendLetterSendRequest(uint32_t letterId, const char16_t* receiver, const char16_t* title, BYTE rotation, BYTE animation, uint16_t messageLength, const char16_t* message)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the letter is written here. The C4 header has
+    // a big-endian length; the receiver and title are fixed UTF-8 fields and the
+    // message is a variable-length UTF-8 field with a terminator.
+    constexpr std::size_t ReceiverFieldLength = 10;
+    constexpr std::size_t ReceiverOffset = 8;
+    constexpr std::size_t TitleFieldLength = 60;
+    constexpr std::size_t TitleOffset = 18;
+    constexpr std::size_t RotationOffset = 78;
+    constexpr std::size_t AnimationOffset = 79;
+    constexpr std::size_t MessageLengthOffset = 80;
+    constexpr std::size_t MessageOffset = 82;
+    constexpr std::size_t MaxPacketLength = 0xFFFF;
+    constexpr std::size_t MaxMessageLength = MaxPacketLength - MessageOffset - 1;
+
+    if (receiver == nullptr || title == nullptr || message == nullptr)
+    {
+        return;
+    }
+
+    const std::string receiverText = Core::Text::ToUtf8(receiver);
+    const std::size_t receiverTextLength = Utf8LengthAtMost(receiverText, ReceiverFieldLength);
+    const std::string titleText = Core::Text::ToUtf8(title);
+    const std::size_t titleTextLength = Utf8LengthAtMost(titleText, TitleFieldLength);
+    const std::string messageText = Core::Text::ToUtf8(message);
+    const std::size_t messageTextLength = Utf8LengthAtMost(messageText, MaxMessageLength);
+
+    const std::size_t packetLength = MessageOffset + messageTextLength + 1;
+    std::vector<BYTE> packet(packetLength, 0);
+    packet[0] = 0xC4;
+    packet[1] = static_cast<BYTE>((packetLength >> 8) & 0xFF);
+    packet[2] = static_cast<BYTE>(packetLength & 0xFF);
+    packet[3] = 0xC5;
+    packet[4] = static_cast<BYTE>(letterId & 0xFF);
+    packet[5] = static_cast<BYTE>((letterId >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((letterId >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((letterId >> 24) & 0xFF);
+    memcpy(packet.data() + ReceiverOffset, receiverText.data(), receiverTextLength);
+    memcpy(packet.data() + TitleOffset, titleText.data(), titleTextLength);
+    packet[RotationOffset] = rotation;
+    packet[AnimationOffset] = animation;
+    packet[MessageLengthOffset] = static_cast<BYTE>(messageLength & 0xFF);
+    packet[MessageLengthOffset + 1] = static_cast<BYTE>((messageLength >> 8) & 0xFF);
+    memcpy(packet.data() + MessageOffset, messageText.data(), messageTextLength);
+
+    Connection_SendRaw(this->GetHandle(), packet.data(), static_cast<int32_t>(packetLength));
+#else
     static const auto dotnet_SendLetterSendRequest = LoadManagedSymbol<::SendLetterSendRequest>("SendLetterSendRequest");
     if (!dotnet_SendLetterSendRequest)
     {
@@ -2147,10 +2207,23 @@ void PacketFunctions_ClientToServer::SendLetterSendRequest(uint32_t letterId, co
     }
 
     dotnet_SendLetterSendRequest(this->GetHandle(), letterId, receiver, title, rotation, animation, messageLength, message);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLetterReadRequest(uint16_t letterIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the letter read request is written here.
+    const BYTE packet[6] = {
+        0xC1,
+        0x06,
+        0xC7,
+        0x00,
+        static_cast<BYTE>(letterIndex & 0xFF),
+        static_cast<BYTE>((letterIndex >> 8) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLetterReadRequest = LoadManagedSymbol<::SendLetterReadRequest>("SendLetterReadRequest");
     if (!dotnet_SendLetterReadRequest)
     {
@@ -2158,6 +2231,7 @@ void PacketFunctions_ClientToServer::SendLetterReadRequest(uint16_t letterIndex)
     }
 
     dotnet_SendLetterReadRequest(this->GetHandle(), letterIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildKickPlayerRequest(const char16_t* playerName, const char16_t* securityCode)
@@ -2672,6 +2746,24 @@ void PacketFunctions_ClientToServer::SendFriendDelete(const char16_t* friendName
 
 void PacketFunctions_ClientToServer::SendChatRoomCreateRequest(const char16_t* friendName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the chat room creation is written here.
+    constexpr std::size_t FriendNameFieldLength = 10;
+    constexpr std::size_t FriendNameOffset = 3;
+
+    if (friendName == nullptr)
+    {
+        return;
+    }
+
+    const std::string friendNameText = Core::Text::ToUtf8(friendName);
+    const std::size_t friendNameLength = Utf8LengthAtMost(friendNameText, FriendNameFieldLength);
+
+    BYTE packet[13] = { 0xC1, 0x0D, 0xCA };
+    memcpy(packet + FriendNameOffset, friendNameText.data(), friendNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChatRoomCreateRequest = LoadManagedSymbol<::SendChatRoomCreateRequest>("SendChatRoomCreateRequest");
     if (!dotnet_SendChatRoomCreateRequest)
     {
@@ -2679,6 +2771,7 @@ void PacketFunctions_ClientToServer::SendChatRoomCreateRequest(const char16_t* f
     }
 
     dotnet_SendChatRoomCreateRequest(this->GetHandle(), friendName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFriendAddResponse(BYTE accepted, const char16_t* friendRequesterName)
@@ -2731,6 +2824,33 @@ void PacketFunctions_ClientToServer::SendSetFriendOnlineState(BYTE onlineState)
 
 void PacketFunctions_ClientToServer::SendChatRoomInvitationRequest(const char16_t* friendName, uint16_t roomId, uint32_t requestId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the chat room invitation is written here. The
+    // room and request ids are big-endian.
+    constexpr std::size_t FriendNameFieldLength = 10;
+    constexpr std::size_t FriendNameOffset = 3;
+    constexpr std::size_t RoomIdOffset = 13;
+    constexpr std::size_t RequestIdOffset = 15;
+
+    if (friendName == nullptr)
+    {
+        return;
+    }
+
+    const std::string friendNameText = Core::Text::ToUtf8(friendName);
+    const std::size_t friendNameLength = Utf8LengthAtMost(friendNameText, FriendNameFieldLength);
+
+    BYTE packet[19] = { 0xC1, 0x13, 0xCB };
+    memcpy(packet + FriendNameOffset, friendNameText.data(), friendNameLength);
+    packet[RoomIdOffset] = static_cast<BYTE>((roomId >> 8) & 0xFF);
+    packet[RoomIdOffset + 1] = static_cast<BYTE>(roomId & 0xFF);
+    packet[RequestIdOffset] = static_cast<BYTE>((requestId >> 24) & 0xFF);
+    packet[RequestIdOffset + 1] = static_cast<BYTE>((requestId >> 16) & 0xFF);
+    packet[RequestIdOffset + 2] = static_cast<BYTE>((requestId >> 8) & 0xFF);
+    packet[RequestIdOffset + 3] = static_cast<BYTE>(requestId & 0xFF);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChatRoomInvitationRequest = LoadManagedSymbol<::SendChatRoomInvitationRequest>("SendChatRoomInvitationRequest");
     if (!dotnet_SendChatRoomInvitationRequest)
     {
@@ -2738,6 +2858,7 @@ void PacketFunctions_ClientToServer::SendChatRoomInvitationRequest(const char16_
     }
 
     dotnet_SendChatRoomInvitationRequest(this->GetHandle(), friendName, roomId, requestId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLegacyQuestStateRequest()
