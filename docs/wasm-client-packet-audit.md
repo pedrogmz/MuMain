@@ -26,8 +26,8 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **106** siguen sin rama `__EMSCRIPTEN__`.
-- **87** ya tienen rama nativa:
+- **99** siguen sin rama `__EMSCRIPTEN__`.
+- **94** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -67,7 +67,11 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
     `SendRequestAllianceList`, `SendRemoveAllianceGuildRequest`,
     `SendFriendListRequest`, `SendFriendAddRequest`, `SendFriendDelete`,
     `SendFriendAddResponse`, `SendSetFriendOnlineState`.
-- De los 106 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Lote social, tienda personal (detalle abajo): `SendPlayerShopOpen`,
+    `SendPlayerShopClose`, `SendPlayerShopSetItemPrice`,
+    `SendPlayerShopSetItemPriceExtended`, `SendPlayerShopItemListRequest`,
+    `SendPlayerShopItemBuyRequest`, `SendPlayerShopCloseOther`.
+- De los 99 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -182,17 +186,28 @@ y cancelar) y el flujo de invitación/expulsión de party.
 Queda pendiente probar en juego la creación de guild, la asignación de roles, las
 alianzas/hostilidades y el flujo completo de amigos.
 
+## Lote social — tienda personal (2026-11-01)
+
+| Función | Paquete | Notas |
+|---|---|---|
+| `SendPlayerShopOpen` | C3 `3F/02`, len 30 | Nombre de tienda UTF-8 de 26 bytes. |
+| `SendPlayerShopClose` | C3 `3F/03`, len 4 | Cerrar la tienda propia. |
+| `SendPlayerShopSetItemPrice` | C3 `3F/01`, len 9 | Precio en zen, little-endian. |
+| `SendPlayerShopSetItemPriceExtended` | C3 `3F/09`, len 13 | Precio por zen o por item, todo little-endian. |
+| `SendPlayerShopItemListRequest` | C3 `3F/05`, len 16 | `PlayerId` big-endian y nombre de 10 bytes. |
+| `SendPlayerShopItemBuyRequest` | C3 `3F/06`, len 17 | Añade el slot del item. |
+| `SendPlayerShopCloseOther` | C3 `3F/07`, len 16 | Cerrar la tienda de otro jugador. |
+
+Queda pendiente probar en juego abrir/cerrar la tienda, fijar precios en zen y
+por item, listar y comprar.
+
 ## Segunda capa (features completas)
 
-Con el lote 2 y el lote social de trade/party/guild/amigos, la capa de paquetes
-de NPC, quests, crafting, baúl, mascotas, trade, party, guild y amigos ya está
-cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
+Con el lote 2 y el lote social completo (trade, party, guild, amigos y tienda
+personal), la capa de paquetes de esos sistemas ya está cubierta; lo que falta de
+ellos es el flujo de UI en juego.
 
 - **Cartas y salas de chat**: `SendLetter*`, `SendChatRoom*`.
-- **Tienda personal**: `SendPlayerShopOpen`, `SendPlayerShopClose`,
-  `SendPlayerShopSetItemPrice`, `SendPlayerShopSetItemPriceExtended`,
-  `SendPlayerShopItemListRequest`, `SendPlayerShopItemBuyRequest`,
-  `SendPlayerShopCloseOther`.
 - **Eventos y sistemas especiales**: Blood Castle, Devil Square, Chaos Castle,
   Illusion Temple, Doppelganger, Lucky Coin, Gens, CryWolf, Kanturu, Castle
   Siege, Cash Shop y MuHelper.
@@ -213,13 +228,13 @@ cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
 
 1. **Lote crítico** (hecho el 2026-10-31): combate, items, mapa y personajes.
 2. **Lote NPC/quest/crafting/baúl** (hecho el 2026-11-01): el lote 2 de arriba.
-3. **Lote social** (en curso): trade, party, guild y amigos hechos el
-   2026-11-01; queda la tienda personal.
+3. **Lote social** (hecho el 2026-11-01): trade, party, guild, amigos y tienda
+   personal.
 4. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 106 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 99 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
@@ -230,12 +245,9 @@ bridge) y sirve para priorizar.
 | 6 | `SendCashShopPointInfoRequest` | C1HeaderWithSubCode | `D2/01` | 4 |
 | 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
 | 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
-| 4 | `SendPlayerShopItemListRequest` | C3HeaderWithSubCode | `3F/05` | 16 |
 | 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
 | 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
 | 3 | `SendDuelStartRequest` | C3HeaderWithSubCode | `AA/01` | 16 |
-| 2 | `SendPlayerShopOpen` | C3HeaderWithSubCode | `3F/02` | 30 |
-| 2 | `SendPlayerShopClose` | C3HeaderWithSubCode | `3F/03` | 4 |
 | 2 | `SendCastleSiegeRegistrationStateRequest` | C1HeaderWithSubCode | `B2/03` | 4 |
 | 2 | `SendCastleSiegeDefenseBuyRequest` | C1HeaderWithSubCode | `B2/05` | 12 |
 | 2 | `SendCastleSiegeDefenseRepairRequest` | C1HeaderWithSubCode | `B2/06` | 12 |
@@ -255,10 +267,6 @@ bridge) y sirve para priorizar.
 | 2 | `SendDuelStopRequest` | C3HeaderWithSubCode | `AA/03` | 4 |
 | 1 | `SendLogOutByCheatDetection` | C3HeaderWithSubCode | `F1/03` | 6 |
 | 1 | `SendResetCharacterPointRequest` | C1HeaderWithSubCode | `F2/00` | 4 |
-| 1 | `SendPlayerShopSetItemPrice` | C3HeaderWithSubCode | `3F/01` | 9 |
-| 1 | `SendPlayerShopItemBuyRequest` | C3HeaderWithSubCode | `3F/06` | 17 |
-| 1 | `SendPlayerShopCloseOther` | C3HeaderWithSubCode | `3F/07` | 16 |
-| 1 | `SendPlayerShopSetItemPriceExtended` | C3HeaderWithSubCode | `3F/09` | 13 |
 | 1 | `SendServerChangeAuthentication` | C3HeaderWithSubCode | `B1/01` | 69 |
 | 1 | `SendCastleSiegeStatusRequest` | C1HeaderWithSubCode | `B2/00` | 4 |
 | 1 | `SendCastleSiegeRegistrationRequest` | C1HeaderWithSubCode | `B2/01` | 4 |
