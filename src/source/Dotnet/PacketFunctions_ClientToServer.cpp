@@ -206,6 +206,17 @@ void PacketFunctions_ClientToServer::SendLogOut(LogOutType type)
 
 void PacketFunctions_ClientToServer::SendLogOutByCheatDetection(BYTE param, BYTE type)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LogOutByCheatDetection packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x06;
+    packet[2] = 0xF1;
+    packet[3] = 0x03;
+    packet[4] = static_cast<BYTE>(type);
+    packet[5] = static_cast<BYTE>(param);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLogOutByCheatDetection = LoadManagedSymbol<::SendLogOutByCheatDetection>("SendLogOutByCheatDetection");
     if (!dotnet_SendLogOutByCheatDetection)
     {
@@ -213,10 +224,20 @@ void PacketFunctions_ClientToServer::SendLogOutByCheatDetection(BYTE param, BYTE
     }
 
     dotnet_SendLogOutByCheatDetection(this->GetHandle(), param, type);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendResetCharacterPointRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ResetCharacterPointRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xF2;
+    packet[3] = 0x00;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendResetCharacterPointRequest = LoadManagedSymbol<::SendResetCharacterPointRequest>("SendResetCharacterPointRequest");
     if (!dotnet_SendResetCharacterPointRequest)
     {
@@ -224,6 +245,7 @@ void PacketFunctions_ClientToServer::SendResetCharacterPointRequest()
     }
 
     dotnet_SendResetCharacterPointRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopSetItemPrice(BYTE itemSlot, uint32_t price)
@@ -756,6 +778,96 @@ void PacketFunctions_ClientToServer::SendTeleportTarget(uint16_t targetId, BYTE 
 
 void PacketFunctions_ClientToServer::SendServerChangeAuthentication(const BYTE* accountXor3, uint32_t accountXor3ByteLength, const BYTE* characterNameXor3, uint32_t characterNameXor3ByteLength, uint32_t authCode1, uint32_t authCode2, uint32_t authCode3, uint32_t authCode4, uint32_t tickCount, const BYTE* clientVersion, uint32_t clientVersionByteLength, const BYTE* clientSerial, uint32_t clientSerialByteLength)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ServerChangeAuthentication packet is written here.
+    constexpr std::size_t AccountXor3Length = 12;
+    constexpr std::size_t AccountXor3Offset = 4;
+
+    if (accountXor3 == nullptr && accountXor3ByteLength > 0)
+    {
+        return;
+    }
+
+    const std::size_t accountXor3CopyLength =
+        accountXor3ByteLength > AccountXor3Length ? AccountXor3Length : accountXor3ByteLength;
+
+    constexpr std::size_t CharacterNameXor3Length = 12;
+    constexpr std::size_t CharacterNameXor3Offset = 16;
+
+    if (characterNameXor3 == nullptr && characterNameXor3ByteLength > 0)
+    {
+        return;
+    }
+
+    const std::size_t characterNameXor3CopyLength =
+        characterNameXor3ByteLength > CharacterNameXor3Length ? CharacterNameXor3Length : characterNameXor3ByteLength;
+
+    constexpr std::size_t ClientVersionLength = 5;
+    constexpr std::size_t ClientVersionOffset = 48;
+
+    if (clientVersion == nullptr && clientVersionByteLength > 0)
+    {
+        return;
+    }
+
+    const std::size_t clientVersionCopyLength =
+        clientVersionByteLength > ClientVersionLength ? ClientVersionLength : clientVersionByteLength;
+
+    constexpr std::size_t ClientSerialLength = 16;
+    constexpr std::size_t ClientSerialOffset = 53;
+
+    if (clientSerial == nullptr && clientSerialByteLength > 0)
+    {
+        return;
+    }
+
+    const std::size_t clientSerialCopyLength =
+        clientSerialByteLength > ClientSerialLength ? ClientSerialLength : clientSerialByteLength;
+
+    BYTE packet[69] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x45;
+    packet[2] = 0xB1;
+    packet[3] = 0x01;
+    packet[28] = static_cast<BYTE>((authCode1 >> 0) & 0xFF);
+    packet[29] = static_cast<BYTE>((authCode1 >> 8) & 0xFF);
+    packet[30] = static_cast<BYTE>((authCode1 >> 16) & 0xFF);
+    packet[31] = static_cast<BYTE>((authCode1 >> 24) & 0xFF);
+    packet[32] = static_cast<BYTE>((authCode2 >> 0) & 0xFF);
+    packet[33] = static_cast<BYTE>((authCode2 >> 8) & 0xFF);
+    packet[34] = static_cast<BYTE>((authCode2 >> 16) & 0xFF);
+    packet[35] = static_cast<BYTE>((authCode2 >> 24) & 0xFF);
+    packet[36] = static_cast<BYTE>((authCode3 >> 0) & 0xFF);
+    packet[37] = static_cast<BYTE>((authCode3 >> 8) & 0xFF);
+    packet[38] = static_cast<BYTE>((authCode3 >> 16) & 0xFF);
+    packet[39] = static_cast<BYTE>((authCode3 >> 24) & 0xFF);
+    packet[40] = static_cast<BYTE>((authCode4 >> 0) & 0xFF);
+    packet[41] = static_cast<BYTE>((authCode4 >> 8) & 0xFF);
+    packet[42] = static_cast<BYTE>((authCode4 >> 16) & 0xFF);
+    packet[43] = static_cast<BYTE>((authCode4 >> 24) & 0xFF);
+    packet[44] = static_cast<BYTE>((tickCount >> 0) & 0xFF);
+    packet[45] = static_cast<BYTE>((tickCount >> 8) & 0xFF);
+    packet[46] = static_cast<BYTE>((tickCount >> 16) & 0xFF);
+    packet[47] = static_cast<BYTE>((tickCount >> 24) & 0xFF);
+    if (accountXor3CopyLength > 0)
+    {
+        memcpy(packet + AccountXor3Offset, accountXor3, accountXor3CopyLength);
+    }
+    if (characterNameXor3CopyLength > 0)
+    {
+        memcpy(packet + CharacterNameXor3Offset, characterNameXor3, characterNameXor3CopyLength);
+    }
+    if (clientVersionCopyLength > 0)
+    {
+        memcpy(packet + ClientVersionOffset, clientVersion, clientVersionCopyLength);
+    }
+    if (clientSerialCopyLength > 0)
+    {
+        memcpy(packet + ClientSerialOffset, clientSerial, clientSerialCopyLength);
+    }
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendServerChangeAuthentication = LoadManagedSymbol<::SendServerChangeAuthentication>("SendServerChangeAuthentication");
     if (!dotnet_SendServerChangeAuthentication)
     {
@@ -763,10 +875,20 @@ void PacketFunctions_ClientToServer::SendServerChangeAuthentication(const BYTE* 
     }
 
     dotnet_SendServerChangeAuthentication(this->GetHandle(), accountXor3, accountXor3ByteLength, characterNameXor3, characterNameXor3ByteLength, authCode1, authCode2, authCode3, authCode4, tickCount, clientVersion, clientVersionByteLength, clientSerial, clientSerialByteLength);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeStatusRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeStatusRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB2;
+    packet[3] = 0x00;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeStatusRequest = LoadManagedSymbol<::SendCastleSiegeStatusRequest>("SendCastleSiegeStatusRequest");
     if (!dotnet_SendCastleSiegeStatusRequest)
     {
@@ -774,10 +896,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeStatusRequest()
     }
 
     dotnet_SendCastleSiegeStatusRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeRegistrationRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeRegistrationRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB2;
+    packet[3] = 0x01;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeRegistrationRequest = LoadManagedSymbol<::SendCastleSiegeRegistrationRequest>("SendCastleSiegeRegistrationRequest");
     if (!dotnet_SendCastleSiegeRegistrationRequest)
     {
@@ -785,10 +917,21 @@ void PacketFunctions_ClientToServer::SendCastleSiegeRegistrationRequest()
     }
 
     dotnet_SendCastleSiegeRegistrationRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeUnregisterRequest(BYTE isGivingUp)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeUnregisterRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xB2;
+    packet[3] = 0x02;
+    packet[4] = static_cast<BYTE>(isGivingUp == 1 ? 1 : 0);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeUnregisterRequest = LoadManagedSymbol<::SendCastleSiegeUnregisterRequest>("SendCastleSiegeUnregisterRequest");
     if (!dotnet_SendCastleSiegeUnregisterRequest)
     {
@@ -796,10 +939,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeUnregisterRequest(BYTE isGiv
     }
 
     dotnet_SendCastleSiegeUnregisterRequest(this->GetHandle(), isGivingUp);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeRegistrationStateRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeRegistrationStateRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB2;
+    packet[3] = 0x03;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeRegistrationStateRequest = LoadManagedSymbol<::SendCastleSiegeRegistrationStateRequest>("SendCastleSiegeRegistrationStateRequest");
     if (!dotnet_SendCastleSiegeRegistrationStateRequest)
     {
@@ -807,10 +960,21 @@ void PacketFunctions_ClientToServer::SendCastleSiegeRegistrationStateRequest()
     }
 
     dotnet_SendCastleSiegeRegistrationStateRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeMarkRegistration(BYTE itemIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeMarkRegistration packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xB2;
+    packet[3] = 0x04;
+    packet[4] = static_cast<BYTE>(itemIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeMarkRegistration = LoadManagedSymbol<::SendCastleSiegeMarkRegistration>("SendCastleSiegeMarkRegistration");
     if (!dotnet_SendCastleSiegeMarkRegistration)
     {
@@ -818,10 +982,28 @@ void PacketFunctions_ClientToServer::SendCastleSiegeMarkRegistration(BYTE itemIn
     }
 
     dotnet_SendCastleSiegeMarkRegistration(this->GetHandle(), itemIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeDefenseBuyRequest(uint32_t npcNumber, uint32_t npcIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeDefenseBuyRequest packet is written here.
+    BYTE packet[12] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x0C;
+    packet[2] = 0xB2;
+    packet[3] = 0x05;
+    packet[4] = static_cast<BYTE>((npcNumber >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((npcNumber >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((npcNumber >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((npcNumber >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((npcIndex >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((npcIndex >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((npcIndex >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((npcIndex >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeDefenseBuyRequest = LoadManagedSymbol<::SendCastleSiegeDefenseBuyRequest>("SendCastleSiegeDefenseBuyRequest");
     if (!dotnet_SendCastleSiegeDefenseBuyRequest)
     {
@@ -829,10 +1011,28 @@ void PacketFunctions_ClientToServer::SendCastleSiegeDefenseBuyRequest(uint32_t n
     }
 
     dotnet_SendCastleSiegeDefenseBuyRequest(this->GetHandle(), npcNumber, npcIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeDefenseRepairRequest(uint32_t npcNumber, uint32_t npcIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeDefenseRepairRequest packet is written here.
+    BYTE packet[12] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x0C;
+    packet[2] = 0xB2;
+    packet[3] = 0x06;
+    packet[4] = static_cast<BYTE>((npcNumber >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((npcNumber >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((npcNumber >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((npcNumber >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((npcIndex >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((npcIndex >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((npcIndex >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((npcIndex >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeDefenseRepairRequest = LoadManagedSymbol<::SendCastleSiegeDefenseRepairRequest>("SendCastleSiegeDefenseRepairRequest");
     if (!dotnet_SendCastleSiegeDefenseRepairRequest)
     {
@@ -840,10 +1040,36 @@ void PacketFunctions_ClientToServer::SendCastleSiegeDefenseRepairRequest(uint32_
     }
 
     dotnet_SendCastleSiegeDefenseRepairRequest(this->GetHandle(), npcNumber, npcIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeDefenseUpgradeRequest(uint32_t npcNumber, uint32_t npcIndex, uint32_t npcUpgradeType, uint32_t npcUpgradeValue)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeDefenseUpgradeRequest packet is written here.
+    BYTE packet[20] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x14;
+    packet[2] = 0xB2;
+    packet[3] = 0x07;
+    packet[4] = static_cast<BYTE>((npcNumber >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((npcNumber >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((npcNumber >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((npcNumber >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((npcIndex >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((npcIndex >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((npcIndex >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((npcIndex >> 24) & 0xFF);
+    packet[12] = static_cast<BYTE>((npcUpgradeType >> 0) & 0xFF);
+    packet[13] = static_cast<BYTE>((npcUpgradeType >> 8) & 0xFF);
+    packet[14] = static_cast<BYTE>((npcUpgradeType >> 16) & 0xFF);
+    packet[15] = static_cast<BYTE>((npcUpgradeType >> 24) & 0xFF);
+    packet[16] = static_cast<BYTE>((npcUpgradeValue >> 0) & 0xFF);
+    packet[17] = static_cast<BYTE>((npcUpgradeValue >> 8) & 0xFF);
+    packet[18] = static_cast<BYTE>((npcUpgradeValue >> 16) & 0xFF);
+    packet[19] = static_cast<BYTE>((npcUpgradeValue >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeDefenseUpgradeRequest = LoadManagedSymbol<::SendCastleSiegeDefenseUpgradeRequest>("SendCastleSiegeDefenseUpgradeRequest");
     if (!dotnet_SendCastleSiegeDefenseUpgradeRequest)
     {
@@ -851,10 +1077,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeDefenseUpgradeRequest(uint32
     }
 
     dotnet_SendCastleSiegeDefenseUpgradeRequest(this->GetHandle(), npcNumber, npcIndex, npcUpgradeType, npcUpgradeValue);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeTaxInfoRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeTaxInfoRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB2;
+    packet[3] = 0x08;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeTaxInfoRequest = LoadManagedSymbol<::SendCastleSiegeTaxInfoRequest>("SendCastleSiegeTaxInfoRequest");
     if (!dotnet_SendCastleSiegeTaxInfoRequest)
     {
@@ -862,10 +1098,25 @@ void PacketFunctions_ClientToServer::SendCastleSiegeTaxInfoRequest()
     }
 
     dotnet_SendCastleSiegeTaxInfoRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeTaxChangeRequest(CastleSiegeTaxType taxType, uint32_t taxValue)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeTaxChangeRequest packet is written here.
+    BYTE packet[9] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x09;
+    packet[2] = 0xB2;
+    packet[3] = 0x09;
+    packet[4] = static_cast<BYTE>(taxType);
+    packet[5] = static_cast<BYTE>((taxValue >> 24) & 0xFF);
+    packet[6] = static_cast<BYTE>((taxValue >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((taxValue >> 8) & 0xFF);
+    packet[8] = static_cast<BYTE>((taxValue >> 0) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeTaxChangeRequest = LoadManagedSymbol<::SendCastleSiegeTaxChangeRequest>("SendCastleSiegeTaxChangeRequest");
     if (!dotnet_SendCastleSiegeTaxChangeRequest)
     {
@@ -873,10 +1124,24 @@ void PacketFunctions_ClientToServer::SendCastleSiegeTaxChangeRequest(CastleSiege
     }
 
     dotnet_SendCastleSiegeTaxChangeRequest(this->GetHandle(), taxType, taxValue);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeTaxMoneyWithdraw(uint32_t amount)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeTaxMoneyWithdraw packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xB2;
+    packet[3] = 0x10;
+    packet[4] = static_cast<BYTE>((amount >> 24) & 0xFF);
+    packet[5] = static_cast<BYTE>((amount >> 16) & 0xFF);
+    packet[6] = static_cast<BYTE>((amount >> 8) & 0xFF);
+    packet[7] = static_cast<BYTE>((amount >> 0) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeTaxMoneyWithdraw = LoadManagedSymbol<::SendCastleSiegeTaxMoneyWithdraw>("SendCastleSiegeTaxMoneyWithdraw");
     if (!dotnet_SendCastleSiegeTaxMoneyWithdraw)
     {
@@ -884,10 +1149,23 @@ void PacketFunctions_ClientToServer::SendCastleSiegeTaxMoneyWithdraw(uint32_t am
     }
 
     dotnet_SendCastleSiegeTaxMoneyWithdraw(this->GetHandle(), amount);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendToggleCastleGateRequest(BYTE isOpen, uint16_t gateId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ToggleCastleGateRequest packet is written here.
+    BYTE packet[7] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x07;
+    packet[2] = 0xB2;
+    packet[3] = 0x12;
+    packet[4] = static_cast<BYTE>(isOpen == 1 ? 1 : 0);
+    packet[5] = static_cast<BYTE>((gateId >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>(gateId & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendToggleCastleGateRequest = LoadManagedSymbol<::SendToggleCastleGateRequest>("SendToggleCastleGateRequest");
     if (!dotnet_SendToggleCastleGateRequest)
     {
@@ -895,10 +1173,24 @@ void PacketFunctions_ClientToServer::SendToggleCastleGateRequest(BYTE isOpen, ui
     }
 
     dotnet_SendToggleCastleGateRequest(this->GetHandle(), isOpen, gateId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleGuildCommand(BYTE team, BYTE positionX, BYTE positionY, CastleSiegeGuildCommandType command)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleGuildCommand packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xB2;
+    packet[3] = 0x1D;
+    packet[4] = static_cast<BYTE>(team);
+    packet[5] = static_cast<BYTE>(positionX);
+    packet[6] = static_cast<BYTE>(positionY);
+    packet[7] = static_cast<BYTE>(command);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleGuildCommand = LoadManagedSymbol<::SendCastleGuildCommand>("SendCastleGuildCommand");
     if (!dotnet_SendCastleGuildCommand)
     {
@@ -906,10 +1198,21 @@ void PacketFunctions_ClientToServer::SendCastleGuildCommand(BYTE team, BYTE posi
     }
 
     dotnet_SendCastleGuildCommand(this->GetHandle(), team, positionX, positionY, command);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeHuntingZoneEntranceSetting(BYTE isPublic)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeHuntingZoneEntranceSetting packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xB2;
+    packet[3] = 0x1F;
+    packet[4] = static_cast<BYTE>(isPublic == 1 ? 1 : 0);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeHuntingZoneEntranceSetting = LoadManagedSymbol<::SendCastleSiegeHuntingZoneEntranceSetting>("SendCastleSiegeHuntingZoneEntranceSetting");
     if (!dotnet_SendCastleSiegeHuntingZoneEntranceSetting)
     {
@@ -917,10 +1220,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeHuntingZoneEntranceSetting(B
     }
 
     dotnet_SendCastleSiegeHuntingZoneEntranceSetting(this->GetHandle(), isPublic);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeGateListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeGateListRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB3;
+    packet[3] = 0x01;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeGateListRequest = LoadManagedSymbol<::SendCastleSiegeGateListRequest>("SendCastleSiegeGateListRequest");
     if (!dotnet_SendCastleSiegeGateListRequest)
     {
@@ -928,10 +1241,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeGateListRequest()
     }
 
     dotnet_SendCastleSiegeGateListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeStatueListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeStatueListRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB3;
+    packet[3] = 0x02;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeStatueListRequest = LoadManagedSymbol<::SendCastleSiegeStatueListRequest>("SendCastleSiegeStatueListRequest");
     if (!dotnet_SendCastleSiegeStatueListRequest)
     {
@@ -939,10 +1262,19 @@ void PacketFunctions_ClientToServer::SendCastleSiegeStatueListRequest()
     }
 
     dotnet_SendCastleSiegeStatueListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeRegisteredGuildsListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeRegisteredGuildsListRequest packet is written here.
+    BYTE packet[3] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x03;
+    packet[2] = 0xB4;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeRegisteredGuildsListRequest = LoadManagedSymbol<::SendCastleSiegeRegisteredGuildsListRequest>("SendCastleSiegeRegisteredGuildsListRequest");
     if (!dotnet_SendCastleSiegeRegisteredGuildsListRequest)
     {
@@ -950,10 +1282,19 @@ void PacketFunctions_ClientToServer::SendCastleSiegeRegisteredGuildsListRequest(
     }
 
     dotnet_SendCastleSiegeRegisteredGuildsListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleOwnerListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleOwnerListRequest packet is written here.
+    BYTE packet[3] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x03;
+    packet[2] = 0xB5;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleOwnerListRequest = LoadManagedSymbol<::SendCastleOwnerListRequest>("SendCastleOwnerListRequest");
     if (!dotnet_SendCastleOwnerListRequest)
     {
@@ -961,10 +1302,23 @@ void PacketFunctions_ClientToServer::SendCastleOwnerListRequest()
     }
 
     dotnet_SendCastleOwnerListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFireCatapultRequest(uint16_t catapultId, BYTE targetAreaIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the FireCatapultRequest packet is written here.
+    BYTE packet[7] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x07;
+    packet[2] = 0xB7;
+    packet[3] = 0x01;
+    packet[4] = static_cast<BYTE>((catapultId >> 8) & 0xFF);
+    packet[5] = static_cast<BYTE>(catapultId & 0xFF);
+    packet[6] = static_cast<BYTE>(targetAreaIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFireCatapultRequest = LoadManagedSymbol<::SendFireCatapultRequest>("SendFireCatapultRequest");
     if (!dotnet_SendFireCatapultRequest)
     {
@@ -972,10 +1326,22 @@ void PacketFunctions_ClientToServer::SendFireCatapultRequest(uint16_t catapultId
     }
 
     dotnet_SendFireCatapultRequest(this->GetHandle(), catapultId, targetAreaIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWeaponExplosionRequest(uint16_t catapultId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the WeaponExplosionRequest packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x06;
+    packet[2] = 0xB7;
+    packet[3] = 0x04;
+    packet[4] = static_cast<BYTE>((catapultId >> 8) & 0xFF);
+    packet[5] = static_cast<BYTE>(catapultId & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendWeaponExplosionRequest = LoadManagedSymbol<::SendWeaponExplosionRequest>("SendWeaponExplosionRequest");
     if (!dotnet_SendWeaponExplosionRequest)
     {
@@ -983,10 +1349,20 @@ void PacketFunctions_ClientToServer::SendWeaponExplosionRequest(uint16_t catapul
     }
 
     dotnet_SendWeaponExplosionRequest(this->GetHandle(), catapultId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildLogoOfCastleOwnerRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the GuildLogoOfCastleOwnerRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xB9;
+    packet[3] = 0x02;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildLogoOfCastleOwnerRequest = LoadManagedSymbol<::SendGuildLogoOfCastleOwnerRequest>("SendGuildLogoOfCastleOwnerRequest");
     if (!dotnet_SendGuildLogoOfCastleOwnerRequest)
     {
@@ -994,10 +1370,24 @@ void PacketFunctions_ClientToServer::SendGuildLogoOfCastleOwnerRequest()
     }
 
     dotnet_SendGuildLogoOfCastleOwnerRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCastleSiegeHuntingZoneEnterRequest(uint32_t money)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CastleSiegeHuntingZoneEnterRequest packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xB9;
+    packet[3] = 0x05;
+    packet[4] = static_cast<BYTE>((money >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((money >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((money >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((money >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCastleSiegeHuntingZoneEnterRequest = LoadManagedSymbol<::SendCastleSiegeHuntingZoneEnterRequest>("SendCastleSiegeHuntingZoneEnterRequest");
     if (!dotnet_SendCastleSiegeHuntingZoneEnterRequest)
     {
@@ -1005,10 +1395,20 @@ void PacketFunctions_ClientToServer::SendCastleSiegeHuntingZoneEnterRequest(uint
     }
 
     dotnet_SendCastleSiegeHuntingZoneEnterRequest(this->GetHandle(), money);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCrywolfInfoRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CrywolfInfoRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xBD;
+    packet[3] = 0x00;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCrywolfInfoRequest = LoadManagedSymbol<::SendCrywolfInfoRequest>("SendCrywolfInfoRequest");
     if (!dotnet_SendCrywolfInfoRequest)
     {
@@ -1016,10 +1416,22 @@ void PacketFunctions_ClientToServer::SendCrywolfInfoRequest()
     }
 
     dotnet_SendCrywolfInfoRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCrywolfContractRequest(uint16_t statueId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CrywolfContractRequest packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x06;
+    packet[2] = 0xBD;
+    packet[3] = 0x03;
+    packet[4] = static_cast<BYTE>((statueId >> 8) & 0xFF);
+    packet[5] = static_cast<BYTE>(statueId & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCrywolfContractRequest = LoadManagedSymbol<::SendCrywolfContractRequest>("SendCrywolfContractRequest");
     if (!dotnet_SendCrywolfContractRequest)
     {
@@ -1027,6 +1439,7 @@ void PacketFunctions_ClientToServer::SendCrywolfContractRequest(uint16_t statueI
     }
 
     dotnet_SendCrywolfContractRequest(this->GetHandle(), statueId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCrywolfChaosRateBenefitRequest()
@@ -1049,6 +1462,15 @@ void PacketFunctions_ClientToServer::SendCrywolfChaosRateBenefitRequest()
 
 void PacketFunctions_ClientToServer::SendWhiteAngelItemRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the WhiteAngelItemRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x03;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendWhiteAngelItemRequest = LoadManagedSymbol<::SendWhiteAngelItemRequest>("SendWhiteAngelItemRequest");
     if (!dotnet_SendWhiteAngelItemRequest)
     {
@@ -1056,10 +1478,20 @@ void PacketFunctions_ClientToServer::SendWhiteAngelItemRequest()
     }
 
     dotnet_SendWhiteAngelItemRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterOnWerewolfRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EnterOnWerewolfRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x07;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEnterOnWerewolfRequest = LoadManagedSymbol<::SendEnterOnWerewolfRequest>("SendEnterOnWerewolfRequest");
     if (!dotnet_SendEnterOnWerewolfRequest)
     {
@@ -1067,10 +1499,20 @@ void PacketFunctions_ClientToServer::SendEnterOnWerewolfRequest()
     }
 
     dotnet_SendEnterOnWerewolfRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterOnGatekeeperRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EnterOnGatekeeperRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x08;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEnterOnGatekeeperRequest = LoadManagedSymbol<::SendEnterOnGatekeeperRequest>("SendEnterOnGatekeeperRequest");
     if (!dotnet_SendEnterOnGatekeeperRequest)
     {
@@ -1078,10 +1520,20 @@ void PacketFunctions_ClientToServer::SendEnterOnGatekeeperRequest()
     }
 
     dotnet_SendEnterOnGatekeeperRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLeoHelperItemRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LeoHelperItemRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x09;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLeoHelperItemRequest = LoadManagedSymbol<::SendLeoHelperItemRequest>("SendLeoHelperItemRequest");
     if (!dotnet_SendLeoHelperItemRequest)
     {
@@ -1089,10 +1541,20 @@ void PacketFunctions_ClientToServer::SendLeoHelperItemRequest()
     }
 
     dotnet_SendLeoHelperItemRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMoveToDeviasBySnowmanRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the MoveToDeviasBySnowmanRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x0A;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMoveToDeviasBySnowmanRequest = LoadManagedSymbol<::SendMoveToDeviasBySnowmanRequest>("SendMoveToDeviasBySnowmanRequest");
     if (!dotnet_SendMoveToDeviasBySnowmanRequest)
     {
@@ -1100,10 +1562,20 @@ void PacketFunctions_ClientToServer::SendMoveToDeviasBySnowmanRequest()
     }
 
     dotnet_SendMoveToDeviasBySnowmanRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSantaClausItemRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the SantaClausItemRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD0;
+    packet[3] = 0x10;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSantaClausItemRequest = LoadManagedSymbol<::SendSantaClausItemRequest>("SendSantaClausItemRequest");
     if (!dotnet_SendSantaClausItemRequest)
     {
@@ -1111,10 +1583,20 @@ void PacketFunctions_ClientToServer::SendSantaClausItemRequest()
     }
 
     dotnet_SendSantaClausItemRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendKanturuInfoRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the KanturuInfoRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD1;
+    packet[3] = 0x00;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendKanturuInfoRequest = LoadManagedSymbol<::SendKanturuInfoRequest>("SendKanturuInfoRequest");
     if (!dotnet_SendKanturuInfoRequest)
     {
@@ -1122,10 +1604,20 @@ void PacketFunctions_ClientToServer::SendKanturuInfoRequest()
     }
 
     dotnet_SendKanturuInfoRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendKanturuEnterRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the KanturuEnterRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD1;
+    packet[3] = 0x01;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendKanturuEnterRequest = LoadManagedSymbol<::SendKanturuEnterRequest>("SendKanturuEnterRequest");
     if (!dotnet_SendKanturuEnterRequest)
     {
@@ -1133,6 +1625,7 @@ void PacketFunctions_ClientToServer::SendKanturuEnterRequest()
     }
 
     dotnet_SendKanturuEnterRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRaklionStateInfoRequest()
@@ -1148,6 +1641,15 @@ void PacketFunctions_ClientToServer::SendRaklionStateInfoRequest()
 
 void PacketFunctions_ClientToServer::SendCashShopPointInfoRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopPointInfoRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xD2;
+    packet[3] = 0x01;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopPointInfoRequest = LoadManagedSymbol<::SendCashShopPointInfoRequest>("SendCashShopPointInfoRequest");
     if (!dotnet_SendCashShopPointInfoRequest)
     {
@@ -1155,10 +1657,21 @@ void PacketFunctions_ClientToServer::SendCashShopPointInfoRequest()
     }
 
     dotnet_SendCashShopPointInfoRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopOpenState(BYTE isClosed)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopOpenState packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xD2;
+    packet[3] = 0x02;
+    packet[4] = static_cast<BYTE>(isClosed == 1 ? 1 : 0);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopOpenState = LoadManagedSymbol<::SendCashShopOpenState>("SendCashShopOpenState");
     if (!dotnet_SendCashShopOpenState)
     {
@@ -1166,10 +1679,39 @@ void PacketFunctions_ClientToServer::SendCashShopOpenState(BYTE isClosed)
     }
 
     dotnet_SendCashShopOpenState(this->GetHandle(), isClosed);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopItemBuyRequest(uint32_t packageMainIndex, uint32_t category, uint32_t productMainIndex, uint16_t itemIndex, uint32_t coinIndex, BYTE mileageFlag)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopItemBuyRequest packet is written here.
+    BYTE packet[23] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x17;
+    packet[2] = 0xD2;
+    packet[3] = 0x03;
+    packet[4] = static_cast<BYTE>((packageMainIndex >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((packageMainIndex >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((packageMainIndex >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((packageMainIndex >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((category >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((category >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((category >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((category >> 24) & 0xFF);
+    packet[12] = static_cast<BYTE>((productMainIndex >> 0) & 0xFF);
+    packet[13] = static_cast<BYTE>((productMainIndex >> 8) & 0xFF);
+    packet[14] = static_cast<BYTE>((productMainIndex >> 16) & 0xFF);
+    packet[15] = static_cast<BYTE>((productMainIndex >> 24) & 0xFF);
+    packet[16] = static_cast<BYTE>(itemIndex & 0xFF);
+    packet[17] = static_cast<BYTE>((itemIndex >> 8) & 0xFF);
+    packet[18] = static_cast<BYTE>((coinIndex >> 0) & 0xFF);
+    packet[19] = static_cast<BYTE>((coinIndex >> 8) & 0xFF);
+    packet[20] = static_cast<BYTE>((coinIndex >> 16) & 0xFF);
+    packet[21] = static_cast<BYTE>((coinIndex >> 24) & 0xFF);
+    packet[22] = static_cast<BYTE>(mileageFlag);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopItemBuyRequest = LoadManagedSymbol<::SendCashShopItemBuyRequest>("SendCashShopItemBuyRequest");
     if (!dotnet_SendCashShopItemBuyRequest)
     {
@@ -1177,10 +1719,64 @@ void PacketFunctions_ClientToServer::SendCashShopItemBuyRequest(uint32_t package
     }
 
     dotnet_SendCashShopItemBuyRequest(this->GetHandle(), packageMainIndex, category, productMainIndex, itemIndex, coinIndex, mileageFlag);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopItemGiftRequest(uint32_t packageMainIndex, uint32_t category, uint32_t productMainIndex, uint16_t itemIndex, uint32_t coinIndex, BYTE mileageFlag, const char16_t* giftReceiverName, const char16_t* giftText)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopItemGiftRequest packet is written here.
+    constexpr std::size_t GiftReceiverNameLength = 11;
+    constexpr std::size_t GiftReceiverNameOffset = 23;
+
+    if (giftReceiverName == nullptr)
+    {
+        return;
+    }
+
+    const std::string giftReceiverNameText = Core::Text::ToUtf8(giftReceiverName);
+    const std::size_t giftReceiverNameLength = Utf8LengthAtMost(giftReceiverNameText, GiftReceiverNameLength);
+
+    constexpr std::size_t GiftTextLength = 200;
+    constexpr std::size_t GiftTextOffset = 34;
+
+    if (giftText == nullptr)
+    {
+        return;
+    }
+
+    const std::string giftTextText = Core::Text::ToUtf8(giftText);
+    const std::size_t giftTextLength = Utf8LengthAtMost(giftTextText, GiftTextLength);
+
+    BYTE packet[234] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0xEA;
+    packet[2] = 0xD2;
+    packet[3] = 0x04;
+    packet[4] = static_cast<BYTE>((packageMainIndex >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((packageMainIndex >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((packageMainIndex >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((packageMainIndex >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((category >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((category >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((category >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((category >> 24) & 0xFF);
+    packet[12] = static_cast<BYTE>((productMainIndex >> 0) & 0xFF);
+    packet[13] = static_cast<BYTE>((productMainIndex >> 8) & 0xFF);
+    packet[14] = static_cast<BYTE>((productMainIndex >> 16) & 0xFF);
+    packet[15] = static_cast<BYTE>((productMainIndex >> 24) & 0xFF);
+    packet[16] = static_cast<BYTE>(itemIndex & 0xFF);
+    packet[17] = static_cast<BYTE>((itemIndex >> 8) & 0xFF);
+    packet[18] = static_cast<BYTE>((coinIndex >> 0) & 0xFF);
+    packet[19] = static_cast<BYTE>((coinIndex >> 8) & 0xFF);
+    packet[20] = static_cast<BYTE>((coinIndex >> 16) & 0xFF);
+    packet[21] = static_cast<BYTE>((coinIndex >> 24) & 0xFF);
+    packet[22] = static_cast<BYTE>(mileageFlag);
+    memcpy(packet + GiftReceiverNameOffset, giftReceiverNameText.data(), giftReceiverNameLength);
+    memcpy(packet + GiftTextOffset, giftTextText.data(), giftTextLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopItemGiftRequest = LoadManagedSymbol<::SendCashShopItemGiftRequest>("SendCashShopItemGiftRequest");
     if (!dotnet_SendCashShopItemGiftRequest)
     {
@@ -1188,10 +1784,25 @@ void PacketFunctions_ClientToServer::SendCashShopItemGiftRequest(uint32_t packag
     }
 
     dotnet_SendCashShopItemGiftRequest(this->GetHandle(), packageMainIndex, category, productMainIndex, itemIndex, coinIndex, mileageFlag, giftReceiverName, giftText);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopStorageListRequest(uint32_t pageIndex, BYTE inventoryType)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopStorageListRequest packet is written here.
+    BYTE packet[10] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x0A;
+    packet[2] = 0xD2;
+    packet[3] = 0x05;
+    packet[4] = static_cast<BYTE>((pageIndex >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((pageIndex >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((pageIndex >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((pageIndex >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>(inventoryType);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopStorageListRequest = LoadManagedSymbol<::SendCashShopStorageListRequest>("SendCashShopStorageListRequest");
     if (!dotnet_SendCashShopStorageListRequest)
     {
@@ -1199,6 +1810,7 @@ void PacketFunctions_ClientToServer::SendCashShopStorageListRequest(uint32_t pag
     }
 
     dotnet_SendCashShopStorageListRequest(this->GetHandle(), pageIndex, inventoryType);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopDeleteStorageItemRequest(uint32_t baseItemCode, uint32_t mainItemCode, BYTE productType)
@@ -1214,6 +1826,26 @@ void PacketFunctions_ClientToServer::SendCashShopDeleteStorageItemRequest(uint32
 
 void PacketFunctions_ClientToServer::SendCashShopStorageItemConsumeRequest(uint32_t baseItemCode, uint32_t mainItemCode, uint16_t itemIndex, BYTE productType)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopStorageItemConsumeRequest packet is written here.
+    BYTE packet[15] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x0F;
+    packet[2] = 0xD2;
+    packet[3] = 0x0B;
+    packet[4] = static_cast<BYTE>((baseItemCode >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((baseItemCode >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((baseItemCode >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((baseItemCode >> 24) & 0xFF);
+    packet[8] = static_cast<BYTE>((mainItemCode >> 0) & 0xFF);
+    packet[9] = static_cast<BYTE>((mainItemCode >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>((mainItemCode >> 16) & 0xFF);
+    packet[11] = static_cast<BYTE>((mainItemCode >> 24) & 0xFF);
+    packet[12] = static_cast<BYTE>(itemIndex & 0xFF);
+    packet[13] = static_cast<BYTE>((itemIndex >> 8) & 0xFF);
+    packet[14] = static_cast<BYTE>(productType);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopStorageItemConsumeRequest = LoadManagedSymbol<::SendCashShopStorageItemConsumeRequest>("SendCashShopStorageItemConsumeRequest");
     if (!dotnet_SendCashShopStorageItemConsumeRequest)
     {
@@ -1221,10 +1853,24 @@ void PacketFunctions_ClientToServer::SendCashShopStorageItemConsumeRequest(uint3
     }
 
     dotnet_SendCashShopStorageItemConsumeRequest(this->GetHandle(), baseItemCode, mainItemCode, itemIndex, productType);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCashShopEventItemListRequest(uint32_t categoryIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the CashShopEventItemListRequest packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xD2;
+    packet[3] = 0x13;
+    packet[4] = static_cast<BYTE>((categoryIndex >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((categoryIndex >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((categoryIndex >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((categoryIndex >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendCashShopEventItemListRequest = LoadManagedSymbol<::SendCashShopEventItemListRequest>("SendCashShopEventItemListRequest");
     if (!dotnet_SendCashShopEventItemListRequest)
     {
@@ -1232,6 +1878,7 @@ void PacketFunctions_ClientToServer::SendCashShopEventItemListRequest(uint32_t c
     }
 
     dotnet_SendCashShopEventItemListRequest(this->GetHandle(), categoryIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin)
@@ -2941,6 +3588,17 @@ void PacketFunctions_ClientToServer::SendPetInfoRequest(PetType pet, StorageType
 
 void PacketFunctions_ClientToServer::SendIllusionTempleEnterRequest(BYTE mapNumber, BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the IllusionTempleEnterRequest packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x06;
+    packet[2] = 0xBF;
+    packet[3] = 0x00;
+    packet[4] = static_cast<BYTE>(mapNumber);
+    packet[5] = static_cast<BYTE>(itemSlot);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendIllusionTempleEnterRequest = LoadManagedSymbol<::SendIllusionTempleEnterRequest>("SendIllusionTempleEnterRequest");
     if (!dotnet_SendIllusionTempleEnterRequest)
     {
@@ -2948,10 +3606,24 @@ void PacketFunctions_ClientToServer::SendIllusionTempleEnterRequest(BYTE mapNumb
     }
 
     dotnet_SendIllusionTempleEnterRequest(this->GetHandle(), mapNumber, itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendIllusionTempleSkillRequest(uint16_t skillNumber, BYTE targetObjectIndex, BYTE distance)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the IllusionTempleSkillRequest packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xBF;
+    packet[3] = 0x02;
+    packet[4] = static_cast<BYTE>((skillNumber >> 8) & 0xFF);
+    packet[5] = static_cast<BYTE>(skillNumber & 0xFF);
+    packet[6] = static_cast<BYTE>(targetObjectIndex);
+    packet[7] = static_cast<BYTE>(distance);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendIllusionTempleSkillRequest = LoadManagedSymbol<::SendIllusionTempleSkillRequest>("SendIllusionTempleSkillRequest");
     if (!dotnet_SendIllusionTempleSkillRequest)
     {
@@ -2959,10 +3631,20 @@ void PacketFunctions_ClientToServer::SendIllusionTempleSkillRequest(uint16_t ski
     }
 
     dotnet_SendIllusionTempleSkillRequest(this->GetHandle(), skillNumber, targetObjectIndex, distance);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendIllusionTempleRewardRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the IllusionTempleRewardRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xBF;
+    packet[3] = 0x05;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendIllusionTempleRewardRequest = LoadManagedSymbol<::SendIllusionTempleRewardRequest>("SendIllusionTempleRewardRequest");
     if (!dotnet_SendIllusionTempleRewardRequest)
     {
@@ -2970,10 +3652,20 @@ void PacketFunctions_ClientToServer::SendIllusionTempleRewardRequest()
     }
 
     dotnet_SendIllusionTempleRewardRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLuckyCoinCountRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LuckyCoinCountRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xBF;
+    packet[3] = 0x0B;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLuckyCoinCountRequest = LoadManagedSymbol<::SendLuckyCoinCountRequest>("SendLuckyCoinCountRequest");
     if (!dotnet_SendLuckyCoinCountRequest)
     {
@@ -2981,10 +3673,20 @@ void PacketFunctions_ClientToServer::SendLuckyCoinCountRequest()
     }
 
     dotnet_SendLuckyCoinCountRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLuckyCoinRegistrationRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LuckyCoinRegistrationRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xBF;
+    packet[3] = 0x0C;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLuckyCoinRegistrationRequest = LoadManagedSymbol<::SendLuckyCoinRegistrationRequest>("SendLuckyCoinRegistrationRequest");
     if (!dotnet_SendLuckyCoinRegistrationRequest)
     {
@@ -2992,10 +3694,24 @@ void PacketFunctions_ClientToServer::SendLuckyCoinRegistrationRequest()
     }
 
     dotnet_SendLuckyCoinRegistrationRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLuckyCoinExchangeRequest(uint32_t coinCount)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LuckyCoinExchangeRequest packet is written here.
+    BYTE packet[8] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x08;
+    packet[2] = 0xBF;
+    packet[3] = 0x0D;
+    packet[4] = static_cast<BYTE>((coinCount >> 0) & 0xFF);
+    packet[5] = static_cast<BYTE>((coinCount >> 8) & 0xFF);
+    packet[6] = static_cast<BYTE>((coinCount >> 16) & 0xFF);
+    packet[7] = static_cast<BYTE>((coinCount >> 24) & 0xFF);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLuckyCoinExchangeRequest = LoadManagedSymbol<::SendLuckyCoinExchangeRequest>("SendLuckyCoinExchangeRequest");
     if (!dotnet_SendLuckyCoinExchangeRequest)
     {
@@ -3003,10 +3719,21 @@ void PacketFunctions_ClientToServer::SendLuckyCoinExchangeRequest(uint32_t coinC
     }
 
     dotnet_SendLuckyCoinExchangeRequest(this->GetHandle(), coinCount);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDoppelgangerEnterRequest(BYTE ticketItemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DoppelgangerEnterRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xBF;
+    packet[3] = 0x0E;
+    packet[4] = static_cast<BYTE>(ticketItemSlot);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDoppelgangerEnterRequest = LoadManagedSymbol<::SendDoppelgangerEnterRequest>("SendDoppelgangerEnterRequest");
     if (!dotnet_SendDoppelgangerEnterRequest)
     {
@@ -3014,10 +3741,20 @@ void PacketFunctions_ClientToServer::SendDoppelgangerEnterRequest(BYTE ticketIte
     }
 
     dotnet_SendDoppelgangerEnterRequest(this->GetHandle(), ticketItemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEnterMarketPlaceRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EnterMarketPlaceRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xBF;
+    packet[3] = 0x17;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEnterMarketPlaceRequest = LoadManagedSymbol<::SendEnterMarketPlaceRequest>("SendEnterMarketPlaceRequest");
     if (!dotnet_SendEnterMarketPlaceRequest)
     {
@@ -3025,10 +3762,21 @@ void PacketFunctions_ClientToServer::SendEnterMarketPlaceRequest()
     }
 
     dotnet_SendEnterMarketPlaceRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMuHelperStatusChangeRequest(BYTE pauseStatus)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the MuHelperStatusChangeRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xBF;
+    packet[3] = 0x51;
+    packet[4] = static_cast<BYTE>(pauseStatus == 1 ? 1 : 0);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMuHelperStatusChangeRequest = LoadManagedSymbol<::SendMuHelperStatusChangeRequest>("SendMuHelperStatusChangeRequest");
     if (!dotnet_SendMuHelperStatusChangeRequest)
     {
@@ -3036,10 +3784,36 @@ void PacketFunctions_ClientToServer::SendMuHelperStatusChangeRequest(BYTE pauseS
     }
 
     dotnet_SendMuHelperStatusChangeRequest(this->GetHandle(), pauseStatus);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMuHelperSaveDataRequest(const BYTE* helperData, uint32_t helperDataByteLength)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the MuHelperSaveDataRequest packet is written here.
+    constexpr std::size_t HelperDataLength = 257;
+    constexpr std::size_t HelperDataOffset = 4;
+
+    if (helperData == nullptr && helperDataByteLength > 0)
+    {
+        return;
+    }
+
+    const std::size_t helperDataCopyLength =
+        helperDataByteLength > HelperDataLength ? HelperDataLength : helperDataByteLength;
+
+    BYTE packet[261] = {};
+    packet[0] = 0xC2;
+    packet[1] = 0x01;
+    packet[2] = 0x05;
+    packet[3] = 0xAE;
+    if (helperDataCopyLength > 0)
+    {
+        memcpy(packet + HelperDataOffset, helperData, helperDataCopyLength);
+    }
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMuHelperSaveDataRequest = LoadManagedSymbol<::SendMuHelperSaveDataRequest>("SendMuHelperSaveDataRequest");
     if (!dotnet_SendMuHelperSaveDataRequest)
     {
@@ -3047,6 +3821,7 @@ void PacketFunctions_ClientToServer::SendMuHelperSaveDataRequest(const BYTE* hel
     }
 
     dotnet_SendMuHelperSaveDataRequest(this->GetHandle(), helperData, helperDataByteLength);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendQuestSelectRequest(uint16_t questNumber, uint16_t questGroup, BYTE selectedTextIndex)
@@ -3279,6 +4054,16 @@ void PacketFunctions_ClientToServer::SendNpcBuffRequest()
 
 void PacketFunctions_ClientToServer::SendEnterEmpireGuardianEvent(BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EnterEmpireGuardianEvent packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xF7;
+    packet[3] = 0x01;
+    packet[4] = static_cast<BYTE>(itemSlot);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEnterEmpireGuardianEvent = LoadManagedSymbol<::SendEnterEmpireGuardianEvent>("SendEnterEmpireGuardianEvent");
     if (!dotnet_SendEnterEmpireGuardianEvent)
     {
@@ -3286,10 +4071,21 @@ void PacketFunctions_ClientToServer::SendEnterEmpireGuardianEvent(BYTE itemSlot)
     }
 
     dotnet_SendEnterEmpireGuardianEvent(this->GetHandle(), itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGensJoinRequest(GensType gensType)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the GensJoinRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xF8;
+    packet[3] = 0x01;
+    packet[4] = static_cast<BYTE>(gensType);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGensJoinRequest = LoadManagedSymbol<::SendGensJoinRequest>("SendGensJoinRequest");
     if (!dotnet_SendGensJoinRequest)
     {
@@ -3297,10 +4093,20 @@ void PacketFunctions_ClientToServer::SendGensJoinRequest(GensType gensType)
     }
 
     dotnet_SendGensJoinRequest(this->GetHandle(), gensType);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGensLeaveRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the GensLeaveRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xF8;
+    packet[3] = 0x03;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGensLeaveRequest = LoadManagedSymbol<::SendGensLeaveRequest>("SendGensLeaveRequest");
     if (!dotnet_SendGensLeaveRequest)
     {
@@ -3308,10 +4114,21 @@ void PacketFunctions_ClientToServer::SendGensLeaveRequest()
     }
 
     dotnet_SendGensLeaveRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGensRewardRequest(GensType gensType)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the GensRewardRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0xF8;
+    packet[3] = 0x09;
+    packet[4] = static_cast<BYTE>(gensType);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGensRewardRequest = LoadManagedSymbol<::SendGensRewardRequest>("SendGensRewardRequest");
     if (!dotnet_SendGensRewardRequest)
     {
@@ -3319,10 +4136,20 @@ void PacketFunctions_ClientToServer::SendGensRewardRequest(GensType gensType)
     }
 
     dotnet_SendGensRewardRequest(this->GetHandle(), gensType);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGensRankingRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the GensRankingRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xF8;
+    packet[3] = 0x0B;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGensRankingRequest = LoadManagedSymbol<::SendGensRankingRequest>("SendGensRankingRequest");
     if (!dotnet_SendGensRankingRequest)
     {
@@ -3330,10 +4157,21 @@ void PacketFunctions_ClientToServer::SendGensRankingRequest()
     }
 
     dotnet_SendGensRankingRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDevilSquareEnterRequest(BYTE squareLevel, BYTE ticketItemInventoryIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DevilSquareEnterRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0x90;
+    packet[3] = static_cast<BYTE>(squareLevel);
+    packet[4] = static_cast<BYTE>(ticketItemInventoryIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDevilSquareEnterRequest = LoadManagedSymbol<::SendDevilSquareEnterRequest>("SendDevilSquareEnterRequest");
     if (!dotnet_SendDevilSquareEnterRequest)
     {
@@ -3341,10 +4179,21 @@ void PacketFunctions_ClientToServer::SendDevilSquareEnterRequest(BYTE squareLeve
     }
 
     dotnet_SendDevilSquareEnterRequest(this->GetHandle(), squareLevel, ticketItemInventoryIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMiniGameOpeningStateRequest(MiniGameType eventType, BYTE eventLevel)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the MiniGameOpeningStateRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0x91;
+    packet[3] = static_cast<BYTE>(eventType);
+    packet[4] = static_cast<BYTE>(eventLevel);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMiniGameOpeningStateRequest = LoadManagedSymbol<::SendMiniGameOpeningStateRequest>("SendMiniGameOpeningStateRequest");
     if (!dotnet_SendMiniGameOpeningStateRequest)
     {
@@ -3352,10 +4201,21 @@ void PacketFunctions_ClientToServer::SendMiniGameOpeningStateRequest(MiniGameTyp
     }
 
     dotnet_SendMiniGameOpeningStateRequest(this->GetHandle(), eventType, eventLevel);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEventChipRegistrationRequest(BYTE type, BYTE itemIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EventChipRegistrationRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0x95;
+    packet[3] = static_cast<BYTE>(type);
+    packet[4] = static_cast<BYTE>(itemIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEventChipRegistrationRequest = LoadManagedSymbol<::SendEventChipRegistrationRequest>("SendEventChipRegistrationRequest");
     if (!dotnet_SendEventChipRegistrationRequest)
     {
@@ -3363,6 +4223,7 @@ void PacketFunctions_ClientToServer::SendEventChipRegistrationRequest(BYTE type,
     }
 
     dotnet_SendEventChipRegistrationRequest(this->GetHandle(), type, itemIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMutoNumberRequest()
@@ -3378,6 +4239,14 @@ void PacketFunctions_ClientToServer::SendMutoNumberRequest()
 
 void PacketFunctions_ClientToServer::SendEventChipExitDialog()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the EventChipExitDialog packet is written here.
+    BYTE packet[3] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x03;
+    packet[2] = 0x97;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendEventChipExitDialog = LoadManagedSymbol<::SendEventChipExitDialog>("SendEventChipExitDialog");
     if (!dotnet_SendEventChipExitDialog)
     {
@@ -3385,6 +4254,7 @@ void PacketFunctions_ClientToServer::SendEventChipExitDialog()
     }
 
     dotnet_SendEventChipExitDialog(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendEventChipExchangeRequest(BYTE type)
@@ -3411,6 +4281,51 @@ void PacketFunctions_ClientToServer::SendServerImmigrationRequest(const char16_t
 
 void PacketFunctions_ClientToServer::SendLuckyNumberRequest(const char16_t* serial1, const char16_t* serial2, const char16_t* serial3)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the LuckyNumberRequest packet is written here.
+    constexpr std::size_t Serial1Length = 4;
+    constexpr std::size_t Serial1Offset = 3;
+
+    if (serial1 == nullptr)
+    {
+        return;
+    }
+
+    const std::string serial1Text = Core::Text::ToUtf8(serial1);
+    const std::size_t serial1Length = Utf8LengthAtMost(serial1Text, Serial1Length);
+
+    constexpr std::size_t Serial2Length = 4;
+    constexpr std::size_t Serial2Offset = 8;
+
+    if (serial2 == nullptr)
+    {
+        return;
+    }
+
+    const std::string serial2Text = Core::Text::ToUtf8(serial2);
+    const std::size_t serial2Length = Utf8LengthAtMost(serial2Text, Serial2Length);
+
+    constexpr std::size_t Serial3Length = 4;
+    constexpr std::size_t Serial3Offset = 13;
+
+    if (serial3 == nullptr)
+    {
+        return;
+    }
+
+    const std::string serial3Text = Core::Text::ToUtf8(serial3);
+    const std::size_t serial3Length = Utf8LengthAtMost(serial3Text, Serial3Length);
+
+    BYTE packet[18] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x12;
+    packet[2] = 0x9D;
+    memcpy(packet + Serial1Offset, serial1Text.data(), serial1Length);
+    memcpy(packet + Serial2Offset, serial2Text.data(), serial2Length);
+    memcpy(packet + Serial3Offset, serial3Text.data(), serial3Length);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendLuckyNumberRequest = LoadManagedSymbol<::SendLuckyNumberRequest>("SendLuckyNumberRequest");
     if (!dotnet_SendLuckyNumberRequest)
     {
@@ -3418,10 +4333,21 @@ void PacketFunctions_ClientToServer::SendLuckyNumberRequest(const char16_t* seri
     }
 
     dotnet_SendLuckyNumberRequest(this->GetHandle(), serial1, serial2, serial3);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendBloodCastleEnterRequest(BYTE castleLevel, BYTE ticketItemInventoryIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the BloodCastleEnterRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x05;
+    packet[2] = 0x9A;
+    packet[3] = static_cast<BYTE>(castleLevel);
+    packet[4] = static_cast<BYTE>(ticketItemInventoryIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendBloodCastleEnterRequest = LoadManagedSymbol<::SendBloodCastleEnterRequest>("SendBloodCastleEnterRequest");
     if (!dotnet_SendBloodCastleEnterRequest)
     {
@@ -3429,10 +4355,20 @@ void PacketFunctions_ClientToServer::SendBloodCastleEnterRequest(BYTE castleLeve
     }
 
     dotnet_SendBloodCastleEnterRequest(this->GetHandle(), castleLevel, ticketItemInventoryIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendMiniGameEventCountRequest(MiniGameType miniGame)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the MiniGameEventCountRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0x9F;
+    packet[3] = static_cast<BYTE>(miniGame);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendMiniGameEventCountRequest = LoadManagedSymbol<::SendMiniGameEventCountRequest>("SendMiniGameEventCountRequest");
     if (!dotnet_SendMiniGameEventCountRequest)
     {
@@ -3440,10 +4376,22 @@ void PacketFunctions_ClientToServer::SendMiniGameEventCountRequest(MiniGameType 
     }
 
     dotnet_SendMiniGameEventCountRequest(this->GetHandle(), miniGame);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChaosCastleEnterRequest(BYTE castleLevel, BYTE ticketItemInventoryIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ChaosCastleEnterRequest packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x06;
+    packet[2] = 0xAF;
+    packet[3] = 0x01;
+    packet[4] = static_cast<BYTE>(castleLevel);
+    packet[5] = static_cast<BYTE>(ticketItemInventoryIndex);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChaosCastleEnterRequest = LoadManagedSymbol<::SendChaosCastleEnterRequest>("SendChaosCastleEnterRequest");
     if (!dotnet_SendChaosCastleEnterRequest)
     {
@@ -3451,10 +4399,22 @@ void PacketFunctions_ClientToServer::SendChaosCastleEnterRequest(BYTE castleLeve
     }
 
     dotnet_SendChaosCastleEnterRequest(this->GetHandle(), castleLevel, ticketItemInventoryIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChaosCastlePositionSet(BYTE positionX, BYTE positionY)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ChaosCastlePositionSet packet is written here.
+    BYTE packet[6] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x06;
+    packet[2] = 0xAF;
+    packet[3] = 0x02;
+    packet[4] = static_cast<BYTE>(positionX);
+    packet[5] = static_cast<BYTE>(positionY);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChaosCastlePositionSet = LoadManagedSymbol<::SendChaosCastlePositionSet>("SendChaosCastlePositionSet");
     if (!dotnet_SendChaosCastlePositionSet)
     {
@@ -3462,10 +4422,35 @@ void PacketFunctions_ClientToServer::SendChaosCastlePositionSet(BYTE positionX, 
     }
 
     dotnet_SendChaosCastlePositionSet(this->GetHandle(), positionX, positionY);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDuelStartRequest(uint16_t playerId, const char16_t* playerName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DuelStartRequest packet is written here.
+    constexpr std::size_t PlayerNameLength = 10;
+    constexpr std::size_t PlayerNameOffset = 6;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameLength);
+
+    BYTE packet[16] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x10;
+    packet[2] = 0xAA;
+    packet[3] = 0x01;
+    packet[4] = static_cast<BYTE>((playerId >> 8) & 0xFF);
+    packet[5] = static_cast<BYTE>(playerId & 0xFF);
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDuelStartRequest = LoadManagedSymbol<::SendDuelStartRequest>("SendDuelStartRequest");
     if (!dotnet_SendDuelStartRequest)
     {
@@ -3473,10 +4458,36 @@ void PacketFunctions_ClientToServer::SendDuelStartRequest(uint16_t playerId, con
     }
 
     dotnet_SendDuelStartRequest(this->GetHandle(), playerId, playerName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDuelStartResponse(BYTE response, uint16_t playerId, const char16_t* playerName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DuelStartResponse packet is written here.
+    constexpr std::size_t PlayerNameLength = 10;
+    constexpr std::size_t PlayerNameOffset = 7;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameLength);
+
+    BYTE packet[17] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x11;
+    packet[2] = 0xAA;
+    packet[3] = 0x02;
+    packet[4] = static_cast<BYTE>(response == 1 ? 1 : 0);
+    packet[5] = static_cast<BYTE>(playerId & 0xFF);
+    packet[6] = static_cast<BYTE>((playerId >> 8) & 0xFF);
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDuelStartResponse = LoadManagedSymbol<::SendDuelStartResponse>("SendDuelStartResponse");
     if (!dotnet_SendDuelStartResponse)
     {
@@ -3484,10 +4495,20 @@ void PacketFunctions_ClientToServer::SendDuelStartResponse(BYTE response, uint16
     }
 
     dotnet_SendDuelStartResponse(this->GetHandle(), response, playerId, playerName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDuelStopRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DuelStopRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x04;
+    packet[2] = 0xAA;
+    packet[3] = 0x03;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDuelStopRequest = LoadManagedSymbol<::SendDuelStopRequest>("SendDuelStopRequest");
     if (!dotnet_SendDuelStopRequest)
     {
@@ -3495,10 +4516,21 @@ void PacketFunctions_ClientToServer::SendDuelStopRequest()
     }
 
     dotnet_SendDuelStopRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDuelChannelJoinRequest(BYTE channelId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DuelChannelJoinRequest packet is written here.
+    BYTE packet[5] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x05;
+    packet[2] = 0xAA;
+    packet[3] = 0x07;
+    packet[4] = static_cast<BYTE>(channelId);
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDuelChannelJoinRequest = LoadManagedSymbol<::SendDuelChannelJoinRequest>("SendDuelChannelJoinRequest");
     if (!dotnet_SendDuelChannelJoinRequest)
     {
@@ -3506,10 +4538,20 @@ void PacketFunctions_ClientToServer::SendDuelChannelJoinRequest(BYTE channelId)
     }
 
     dotnet_SendDuelChannelJoinRequest(this->GetHandle(), channelId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendDuelChannelQuitRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the DuelChannelQuitRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC3;
+    packet[1] = 0x04;
+    packet[2] = 0xAA;
+    packet[3] = 0x09;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendDuelChannelQuitRequest = LoadManagedSymbol<::SendDuelChannelQuitRequest>("SendDuelChannelQuitRequest");
     if (!dotnet_SendDuelChannelQuitRequest)
     {
@@ -3517,10 +4559,20 @@ void PacketFunctions_ClientToServer::SendDuelChannelQuitRequest()
     }
 
     dotnet_SendDuelChannelQuitRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChatCommandListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the ChatCommandListRequest packet is written here.
+    BYTE packet[4] = {};
+    packet[0] = 0xC1;
+    packet[1] = 0x04;
+    packet[2] = 0xF5;
+    packet[3] = 0x00;
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendChatCommandListRequest = LoadManagedSymbol<::SendChatCommandListRequest>("SendChatCommandListRequest");
     if (!dotnet_SendChatCommandListRequest)
     {
@@ -3528,4 +4580,5 @@ void PacketFunctions_ClientToServer::SendChatCommandListRequest()
     }
 
     dotnet_SendChatCommandListRequest(this->GetHandle());
+#endif
 }
