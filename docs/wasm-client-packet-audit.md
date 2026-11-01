@@ -26,8 +26,8 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **133** siguen sin rama `__EMSCRIPTEN__`.
-- **60** ya tienen rama nativa:
+- **124** siguen sin rama `__EMSCRIPTEN__`.
+- **69** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -55,7 +55,11 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
     `SendQuestClientActionRequest`, `SendQuestCancelRequest`,
     `SendActiveQuestListRequest`, `SendQuestStateRequest`,
     `SendEventQuestStateListRequest`.
-- De los 133 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Lote social, trade y party (detalle abajo): `SendTradeRequest`,
+    `SendTradeRequestResponse`, `SendTradeButtonStateChange`, `SendTradeCancel`,
+    `SendSetTradeMoney`, `SendPartyInviteRequest`, `SendPartyInviteResponse`,
+    `SendPartyListRequest`, `SendPartyPlayerKickRequest`.
+- De los 124 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -127,15 +131,29 @@ cualquier reapertura hasta reconectar o cambiar de personaje. Las dos rutas de
 cierre del cliente —la X de la ventana y caminar (`UpdateSendMoveInterface`)—
 pasan por `CStorageInventory::ProcessClosing` y envían el paquete.
 
+## Lote social — trade y party (2026-11-01)
+
+| Función | Paquete | Notas |
+|---|---|---|
+| `SendTradeRequest` | C3 `36`, len 5 | `PlayerId` como short big-endian. |
+| `SendTradeRequestResponse` | C1 `37`, len 4 | Aceptar o rechazar la invitación. |
+| `SendTradeButtonStateChange` | C1 `3C`, len 4 | Estado del botón de confirmación. |
+| `SendTradeCancel` | C1 `3D`, len 3 | Cancelar el trade. |
+| `SendSetTradeMoney` | C1 `3A`, len 8 | Zen del trade, little-endian. |
+| `SendPartyInviteRequest` | C1 `40`, len 5 | `TargetPlayerId` big-endian. |
+| `SendPartyInviteResponse` | C1 `41`, len 6 | Aceptar o rechazar, con el id del invitador. |
+| `SendPartyListRequest` | C1 `42`, len 3 | Pedir la lista del grupo. |
+| `SendPartyPlayerKickRequest` | C1 `43`, len 4 | Expulsar por índice de jugador. |
+
+Queda pendiente probar en juego el trade completo (invitar, poner zen, confirmar
+y cancelar) y el flujo de invitación/expulsión de party.
+
 ## Segunda capa (features completas)
 
-Con el lote 2, la capa de paquetes de NPC, quests, crafting, baúl y mascotas ya
-está cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
+Con el lote 2 y el lote social de trade/party, la capa de paquetes de NPC,
+quests, crafting, baúl, mascotas, trade y party ya está cubierta; lo que falta de
+esos sistemas es el flujo de UI en juego.
 
-- **Trade**: `SendTradeRequest`, `SendTradeRequestResponse`,
-  `SendTradeButtonStateChange`, `SendTradeCancel`, `SendSetTradeMoney`.
-- **Party**: `SendPartyInviteRequest`, `SendPartyInviteResponse`,
-  `SendPartyListRequest`, `SendPartyPlayerKickRequest`.
 - **Guild, amigos, cartas y salas de chat**: `SendGuild*`, `SendFriend*`,
   `SendLetter*`, `SendChatRoom*`, `SendRequestAllianceList`,
   `SendRemoveAllianceGuildRequest`.
@@ -163,12 +181,13 @@ está cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
 
 1. **Lote crítico** (hecho el 2026-10-31): combate, items, mapa y personajes.
 2. **Lote NPC/quest/crafting/baúl** (hecho el 2026-11-01): el lote 2 de arriba.
-3. **Lote social**: trade, party, guild, amigos y tienda personal.
+3. **Lote social** (en curso): trade y party hechos el 2026-11-01; quedan guild,
+   amigos y tienda personal.
 4. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 133 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 124 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
@@ -181,16 +200,10 @@ bridge) y sirve para priorizar.
 | 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
 | 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
 | 4 | `SendPlayerShopItemListRequest` | C3HeaderWithSubCode | `3F/05` | 16 |
-| 4 | `SendPartyInviteRequest` | C1Header | `40` | 5 |
-| 4 | `SendTradeCancel` | C1Header | `3D` | 3 |
-| 4 | `SendTradeButtonStateChange` | C1Header | `3C` | 4 |
-| 4 | `SendTradeRequest` | C3Header | `36` | 5 |
 | 4 | `SendGuildListRequest` | C1Header | `52` | 3 |
 | 4 | `SendGuildWarResponse` | C1Header | `61` | 4 |
 | 4 | `SendSetFriendOnlineState` | C1Header | `C4` | 4 |
 | 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
-| 3 | `SendPartyInviteResponse` | C1Header | `41` | 6 |
-| 3 | `SendTradeRequestResponse` | C1Header | `37` | 4 |
 | 3 | `SendGuildJoinRequest` | C1Header | `50` | 5 |
 | 3 | `SendGuildRelationshipChangeResponse` | C1Header | `E6` | 8 |
 | 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
@@ -206,7 +219,6 @@ bridge) y sirve para priorizar.
 | 2 | `SendCrywolfContractRequest` | C1HeaderWithSubCode | `BD/03` | 6 |
 | 2 | `SendSantaClausItemRequest` | C1HeaderWithSubCode | `D0/10` | 4 |
 | 2 | `SendCashShopStorageItemConsumeRequest` | C1HeaderWithSubCode | `D2/0B` | 15 |
-| 2 | `SendPartyPlayerKickRequest` | C1Header | `43` | 4 |
 | 2 | `SendLetterDeleteRequest` | C1Header | `C8` | 6 |
 | 2 | `SendLetterReadRequest` | C1Header | `C7` | 6 |
 | 2 | `SendGuildJoinResponse` | C1Header | `51` | 6 |
@@ -253,8 +265,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendCashShopItemBuyRequest` | C1HeaderWithSubCode | `D2/03` | 23 |
 | 1 | `SendCashShopItemGiftRequest` | C1HeaderWithSubCode | `D2/04` | 234 |
 | 1 | `SendCashShopEventItemListRequest` | C1HeaderWithSubCode | `D2/13` | 8 |
-| 1 | `SendPartyListRequest` | C1Header | `42` | 3 |
-| 1 | `SendSetTradeMoney` | C1Header | `3A` | 8 |
 | 1 | `SendLetterSendRequest` | C4Header | `C5` | — |
 | 1 | `SendGuildKickPlayerRequest` | C1Header | `53` | — |
 | 1 | `SendGuildCreateRequest` | C1Header | `55` | 44 |
