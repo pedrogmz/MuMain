@@ -26,8 +26,8 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **155** siguen sin rama `__EMSCRIPTEN__`.
-- **38** ya tienen rama nativa:
+- **133** siguen sin rama `__EMSCRIPTEN__`.
+- **60** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -44,7 +44,18 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
   - Estadísticas y configuración: `SendIncreaseCharacterStatPoint`,
     `SendAddMasterSkillPoint`, `SendSaveKeyConfiguration`, `SendLogOut`,
     `SendChecksumResponse`, `SendPingResponse`.
-- De los 155 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Lote 2 (detalle abajo): `SendCraftingDialogCloseRequest`,
+    `SendChaosMachineMixRequest`, `SendLahapJewelMixRequest`,
+    `SendCrywolfChaosRateBenefitRequest`, `SendPetCommandRequest`,
+    `SendPetInfoRequest`, `SendUnlockVault`, `SendSetVaultPin`,
+    `SendRemoveVaultPin`, `SendVaultClosed`, `SendVaultMoveMoneyRequest`,
+    `SendLegacyQuestStateRequest`, `SendLegacyQuestStateSetRequest`,
+    `SendAvailableQuestsRequest`, `SendQuestSelectRequest`,
+    `SendQuestProceedRequest`, `SendQuestCompletionRequest`,
+    `SendQuestClientActionRequest`, `SendQuestCancelRequest`,
+    `SendActiveQuestListRequest`, `SendQuestStateRequest`,
+    `SendEventQuestStateListRequest`.
+- De los 133 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -79,17 +90,48 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 Los 21 wrappers de esta tabla ya tienen rama nativa. Quedan pendientes de
 probar en juego, sobre todo el ACK de cambio de mapa y el combate.
 
+## Lote 2 — corregido (2026-11-01)
+
+| Función | Paquete | Notas |
+|---|---|---|
+| `SendCraftingDialogCloseRequest` | C1 `87`, len 3 | Cerrar el diálogo del goblin del caos. |
+| `SendChaosMachineMixRequest` | C1 `86`, len 5 | Mezcla del chaos machine. |
+| `SendLahapJewelMixRequest` | C1 `BC`, len 7 | Combinar y separar stacks de joyas con Lahap. |
+| `SendCrywolfChaosRateBenefitRequest` | C1 `BD/09`, len 4 | Beneficio de tasa de caos de CryWolf. |
+| `SendPetCommandRequest` | C1 `A7`, len 7 | El `TargetId` va como short big-endian. |
+| `SendPetInfoRequest` | C1 `A9`, len 6 | Nivel y experiencia del cuervo/caballo. |
+| `SendUnlockVault` | C1 `83/00`, len 7 | PIN como short little-endian. |
+| `SendSetVaultPin` | C1 `83/01`, len 27 | PIN little-endian y contraseña UTF-8 de 20 bytes. |
+| `SendRemoveVaultPin` | C1 `83/02`, len 27 | Contraseña UTF-8 de 20 bytes. |
+| `SendVaultClosed` | C1 `82`, len 3 | El servidor actualiza el estado del baúl. |
+| `SendVaultMoveMoneyRequest` | C1 `81`, len 8 | Importe como integer little-endian. |
+| `SendLegacyQuestStateRequest` | C1 `A0`, len 3 | Estado de quests al entrar al mundo. |
+| `SendLegacyQuestStateSetRequest` | C1 `A2`, len 5 | Iniciar o terminar una quest legacy. |
+| `SendAvailableQuestsRequest` | C1 `F6/30`, len 4 | Lista de quests del NPC. |
+| `SendQuestSelectRequest` | C1 `F6/0A`, len 9 | Número y grupo de quest little-endian. |
+| `SendQuestProceedRequest` | C1 `F6/0B`, len 9 | Avanzar la quest. |
+| `SendQuestCompletionRequest` | C1 `F6/0D`, len 8 | Completar la quest. |
+| `SendQuestClientActionRequest` | C1 `F6/10`, len 8 | Acción de cliente (p. ej. tutorial). |
+| `SendQuestCancelRequest` | C1 `F6/0F`, len 8 | Cancelar la quest. |
+| `SendActiveQuestListRequest` | C1 `F6/1A`, len 4 | Lista de quests activas. |
+| `SendQuestStateRequest` | C1 `F6/1B`, len 8 | Estado de una quest concreta. |
+| `SendEventQuestStateListRequest` | C1 `F6/21`, len 4 | Quests de evento (Gens). |
+
+El baúl (abrir, cerrar, mover items y mover dinero) quedó verificado en juego el
+2026-11-01. Quedan pendientes de probar las mascotas y el flujo completo de
+quests.
+
+El cierre del baúl ahora envía `VaultClosed` (`C1 03 82`). Antes de esta rama, el
+wrapper era un no-op y el servidor mantenía el storage abierto, así que rechazaba
+cualquier reapertura hasta reconectar o cambiar de personaje. Las dos rutas de
+cierre del cliente —la X de la ventana y caminar (`UpdateSendMoveInterface`)—
+pasan por `CStorageInventory::ProcessClosing` y envían el paquete.
+
 ## Segunda capa (features completas)
 
-- **NPC y quests**: `SendLegacyQuestStateRequest`, `SendQuestSelectRequest`,
-  `SendQuestProceedRequest`, `SendQuestCompletionRequest`,
-  `SendQuestClientActionRequest`, `SendQuestCancelRequest`,
-  `SendActiveQuestListRequest`, `SendQuestStateRequest`,
-  `SendEventQuestStateListRequest`, `SendAvailableQuestsRequest`.
-- **Crafting**: `SendChaosMachineMixRequest`, `SendLahapJewelMixRequest`,
-  `SendCraftingDialogCloseRequest`, `SendCrywolfChaosRateBenefitRequest`.
-- **Baúl**: `SendVaultMoveMoneyRequest`, `SendUnlockVault`, `SendSetVaultPin`,
-  `SendRemoveVaultPin`, `SendVaultClosed`.
+Con el lote 2, la capa de paquetes de NPC, quests, crafting, baúl y mascotas ya
+está cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
+
 - **Trade**: `SendTradeRequest`, `SendTradeRequestResponse`,
   `SendTradeButtonStateChange`, `SendTradeCancel`, `SendSetTradeMoney`.
 - **Party**: `SendPartyInviteRequest`, `SendPartyInviteResponse`,
@@ -101,7 +143,6 @@ probar en juego, sobre todo el ACK de cambio de mapa y el combate.
   `SendPlayerShopSetItemPrice`, `SendPlayerShopSetItemPriceExtended`,
   `SendPlayerShopItemListRequest`, `SendPlayerShopItemBuyRequest`,
   `SendPlayerShopCloseOther`.
-- **Mascotas**: `SendPetInfoRequest`, `SendPetCommandRequest`.
 - **Eventos y sistemas especiales**: Blood Castle, Devil Square, Chaos Castle,
   Illusion Temple, Doppelganger, Lucky Coin, Gens, CryWolf, Kanturu, Castle
   Siege, Cash Shop y MuHelper.
@@ -121,25 +162,22 @@ probar en juego, sobre todo el ACK de cambio de mapa y el combate.
 ## Plan
 
 1. **Lote crítico** (hecho el 2026-10-31): combate, items, mapa y personajes.
-2. **Lote NPC/quest/crafting/baúl**.
+2. **Lote NPC/quest/crafting/baúl** (hecho el 2026-11-01): el lote 2 de arriba.
 3. **Lote social**: trade, party, guild, amigos y tienda personal.
 4. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 155 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 133 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
 | Llamadas | Función | Header | Código | Longitud |
 |---:|---|---|---|---|
-| 11 | `SendCraftingDialogCloseRequest` | C1Header | `87` | 3 |
 | 10 | `SendGuildRelationshipChangeRequest` | C1Header | `E5` | 7 |
 | 9 | `SendCashShopStorageListRequest` | C1HeaderWithSubCode | `D2/05` | 10 |
-| 8 | `SendPetCommandRequest` | C1Header | `A7` | 7 |
 | 8 | `SendMiniGameOpeningStateRequest` | C1Header | `91` | 5 |
 | 6 | `SendCashShopPointInfoRequest` | C1HeaderWithSubCode | `D2/01` | 4 |
-| 6 | `SendPetInfoRequest` | C1Header | `A9` | 6 |
 | 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
 | 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
 | 4 | `SendPlayerShopItemListRequest` | C3HeaderWithSubCode | `3F/05` | 16 |
@@ -151,12 +189,10 @@ bridge) y sirve para priorizar.
 | 4 | `SendGuildWarResponse` | C1Header | `61` | 4 |
 | 4 | `SendSetFriendOnlineState` | C1Header | `C4` | 4 |
 | 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
-| 3 | `SendVaultMoveMoneyRequest` | C1Header | `81` | 8 |
 | 3 | `SendPartyInviteResponse` | C1Header | `41` | 6 |
 | 3 | `SendTradeRequestResponse` | C1Header | `37` | 4 |
 | 3 | `SendGuildJoinRequest` | C1Header | `50` | 5 |
 | 3 | `SendGuildRelationshipChangeResponse` | C1Header | `E6` | 8 |
-| 3 | `SendLegacyQuestStateSetRequest` | C1Header | `A2` | 5 |
 | 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
 | 3 | `SendDuelStartRequest` | C3HeaderWithSubCode | `AA/01` | 16 |
 | 2 | `SendPlayerShopOpen` | C3HeaderWithSubCode | `3F/02` | 30 |
@@ -170,8 +206,6 @@ bridge) y sirve para priorizar.
 | 2 | `SendCrywolfContractRequest` | C1HeaderWithSubCode | `BD/03` | 6 |
 | 2 | `SendSantaClausItemRequest` | C1HeaderWithSubCode | `D0/10` | 4 |
 | 2 | `SendCashShopStorageItemConsumeRequest` | C1HeaderWithSubCode | `D2/0B` | 15 |
-| 2 | `SendVaultClosed` | C1Header | `82` | 3 |
-| 2 | `SendLahapJewelMixRequest` | C1Header | `BC` | 7 |
 | 2 | `SendPartyPlayerKickRequest` | C1Header | `43` | 4 |
 | 2 | `SendLetterDeleteRequest` | C1Header | `C8` | 6 |
 | 2 | `SendLetterReadRequest` | C1Header | `C7` | 6 |
@@ -179,14 +213,9 @@ bridge) y sirve para priorizar.
 | 2 | `SendGuildMasterAnswer` | C1Header | `54` | 4 |
 | 2 | `SendGuildRoleAssignRequest` | C1Header | `E1` | 15 |
 | 2 | `SendRequestAllianceList` | C1Header | `E9` | 3 |
-| 2 | `SendChaosMachineMixRequest` | C1Header | `86` | 5 |
 | 2 | `SendFriendAddRequest` | C1Header | `C1` | 13 |
 | 2 | `SendFriendAddResponse` | C1Header | `C2` | 14 |
 | 2 | `SendMuHelperStatusChangeRequest` | C1HeaderWithSubCode | `BF/51` | 5 |
-| 2 | `SendQuestSelectRequest` | C1HeaderWithSubCode | `F6/0A` | 9 |
-| 2 | `SendQuestProceedRequest` | C1HeaderWithSubCode | `F6/0B` | 9 |
-| 2 | `SendQuestCompletionRequest` | C1HeaderWithSubCode | `F6/0D` | 8 |
-| 2 | `SendQuestClientActionRequest` | C1HeaderWithSubCode | `F6/10` | 8 |
 | 2 | `SendGensJoinRequest` | C1HeaderWithSubCode | `F8/01` | 5 |
 | 2 | `SendGensRewardRequest` | C1HeaderWithSubCode | `F8/09` | 5 |
 | 2 | `SendMiniGameEventCountRequest` | C1Header | `9F` | 4 |
@@ -214,7 +243,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendFireCatapultRequest` | C1HeaderWithSubCode | `B7/01` | 7 |
 | 1 | `SendGuildLogoOfCastleOwnerRequest` | C1HeaderWithSubCode | `B9/02` | 4 |
 | 1 | `SendCastleSiegeHuntingZoneEnterRequest` | C1HeaderWithSubCode | `B9/05` | 8 |
-| 1 | `SendCrywolfChaosRateBenefitRequest` | C1HeaderWithSubCode | `BD/09` | 4 |
 | 1 | `SendWhiteAngelItemRequest` | C1HeaderWithSubCode | `D0/03` | 4 |
 | 1 | `SendEnterOnWerewolfRequest` | C1HeaderWithSubCode | `D0/07` | 4 |
 | 1 | `SendEnterOnGatekeeperRequest` | C1HeaderWithSubCode | `D0/08` | 4 |
@@ -225,9 +253,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendCashShopItemBuyRequest` | C1HeaderWithSubCode | `D2/03` | 23 |
 | 1 | `SendCashShopItemGiftRequest` | C1HeaderWithSubCode | `D2/04` | 234 |
 | 1 | `SendCashShopEventItemListRequest` | C1HeaderWithSubCode | `D2/13` | 8 |
-| 1 | `SendUnlockVault` | C1HeaderWithSubCode | `83/00` | 7 |
-| 1 | `SendSetVaultPin` | C1HeaderWithSubCode | `83/01` | 27 |
-| 1 | `SendRemoveVaultPin` | C1HeaderWithSubCode | `83/02` | 27 |
 | 1 | `SendPartyListRequest` | C1Header | `42` | 3 |
 | 1 | `SendSetTradeMoney` | C1Header | `3A` | 8 |
 | 1 | `SendLetterSendRequest` | C4Header | `C5` | — |
@@ -239,7 +264,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendFriendDelete` | C1Header | `C3` | 13 |
 | 1 | `SendChatRoomCreateRequest` | C1Header | `CA` | 13 |
 | 1 | `SendChatRoomInvitationRequest` | C1Header | `CB` | 19 |
-| 1 | `SendLegacyQuestStateRequest` | C1Header | `A0` | 3 |
 | 1 | `SendIllusionTempleEnterRequest` | C1HeaderWithSubCode | `BF/00` | 6 |
 | 1 | `SendIllusionTempleSkillRequest` | C1HeaderWithSubCode | `BF/02` | 8 |
 | 1 | `SendIllusionTempleRewardRequest` | C1HeaderWithSubCode | `BF/05` | 4 |
@@ -249,11 +273,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendDoppelgangerEnterRequest` | C1HeaderWithSubCode | `BF/0E` | 5 |
 | 1 | `SendEnterMarketPlaceRequest` | C1HeaderWithSubCode | `BF/17` | 4 |
 | 1 | `SendMuHelperSaveDataRequest` | C2Header | `AE` | 261 |
-| 1 | `SendQuestCancelRequest` | C1HeaderWithSubCode | `F6/0F` | 8 |
-| 1 | `SendActiveQuestListRequest` | C1HeaderWithSubCode | `F6/1A` | 4 |
-| 1 | `SendQuestStateRequest` | C1HeaderWithSubCode | `F6/1B` | 8 |
-| 1 | `SendEventQuestStateListRequest` | C1HeaderWithSubCode | `F6/21` | 4 |
-| 1 | `SendAvailableQuestsRequest` | C1HeaderWithSubCode | `F6/30` | 4 |
 | 1 | `SendEnterEmpireGuardianEvent` | C1HeaderWithSubCode | `F7/01` | 5 |
 | 1 | `SendGensLeaveRequest` | C1HeaderWithSubCode | `F8/03` | 4 |
 | 1 | `SendGensRankingRequest` | C1HeaderWithSubCode | `F8/0B` | 4 |
