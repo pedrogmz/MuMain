@@ -27,7 +27,7 @@ bool    MoveHellasObjectSetting(int& objCount, int object);
 bool    MoveHellasObject(OBJECT* o, int& object, int& visibleObject);
 bool    MoveHellasAllObject(OBJECT* o);
 bool    MoveHellasVisual(OBJECT* o);
-bool    RenderHellasVisual(OBJECT* o, BMD* b);
+bool UpdateHellasObjectEffects(OBJECT* o, BMD* b);
 bool    RenderHellasObjectMesh(OBJECT* o, BMD* b);
 
 int     CreateBigMon(OBJECT* o);
@@ -48,4 +48,4 @@ void    MonsterDieWaterSmoke(OBJECT* o);
 bool    MoveHellasMonsterVisual(OBJECT* o, BMD* b);
 bool    RenderHellasMonsterCloth(CHARACTER* c, OBJECT* o, bool Translate = true, int Select = 0);
 bool    RenderHellasMonsterObjectMesh(OBJECT* o, BMD* b);
-bool    RenderHellasMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b);
+bool UpdateHellasMonsterEffects(CHARACTER* c, OBJECT* o, BMD* b);

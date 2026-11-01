@@ -499,7 +499,7 @@ void CursedTemple::MoveBlurEffect(CHARACTER* c, OBJECT* o, BMD* b)
     }
 }
 
-bool CursedTemple::RenderObjectVisual(OBJECT* o, BMD* b)
+bool CursedTemple::UpdateObjectEffects(OBJECT* o, BMD* b)
 {
     if (!gMapManager.IsCursedTemple()) return false;
 
@@ -687,7 +687,7 @@ bool CursedTemple::RenderObject_AfterCharacter(OBJECT* o, BMD* b)
     return false;
 }
 
-bool CursedTemple::RenderMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
+bool CursedTemple::UpdateMonsterEffects(CHARACTER* c, OBJECT* o, BMD* b)
 {
     vec3_t Light;
 
