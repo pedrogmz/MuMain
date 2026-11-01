@@ -26,8 +26,8 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **124** siguen sin rama `__EMSCRIPTEN__`.
-- **69** ya tienen rama nativa:
+- **106** siguen sin rama `__EMSCRIPTEN__`.
+- **87** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -59,7 +59,15 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
     `SendTradeRequestResponse`, `SendTradeButtonStateChange`, `SendTradeCancel`,
     `SendSetTradeMoney`, `SendPartyInviteRequest`, `SendPartyInviteResponse`,
     `SendPartyListRequest`, `SendPartyPlayerKickRequest`.
-- De los 124 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Lote social, guild y amigos (detalle abajo): `SendGuildKickPlayerRequest`,
+    `SendGuildJoinRequest`, `SendGuildJoinResponse`, `SendGuildListRequest`,
+    `SendGuildCreateRequest`, `SendGuildMasterAnswer`, `SendGuildWarResponse`,
+    `SendGuildInfoRequest`, `SendGuildRoleAssignRequest`,
+    `SendGuildRelationshipChangeRequest`, `SendGuildRelationshipChangeResponse`,
+    `SendRequestAllianceList`, `SendRemoveAllianceGuildRequest`,
+    `SendFriendListRequest`, `SendFriendAddRequest`, `SendFriendDelete`,
+    `SendFriendAddResponse`, `SendSetFriendOnlineState`.
+- De los 106 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -148,15 +156,39 @@ pasan por `CStorageInventory::ProcessClosing` y envían el paquete.
 Queda pendiente probar en juego el trade completo (invitar, poner zen, confirmar
 y cancelar) y el flujo de invitación/expulsión de party.
 
+## Lote social — guild y amigos (2026-11-01)
+
+| Función | Paquete | Notas |
+|---|---|---|
+| `SendGuildKickPlayerRequest` | C1 `53`, variable | Nombre de 10 bytes y código de seguridad UTF-8 con terminador. |
+| `SendGuildJoinRequest` | C1 `50`, len 5 | `GuildMasterPlayerId` big-endian. |
+| `SendGuildJoinResponse` | C1 `51`, len 6 | Aceptar o rechazar la solicitud. |
+| `SendGuildListRequest` | C1 `52`, len 3 | Lista de miembros. |
+| `SendGuildCreateRequest` | C1 `55`, len 44 | Nombre de 8 bytes y emblema de 32. |
+| `SendGuildMasterAnswer` | C1 `54`, len 4 | Mostrar o no el diálogo de creación. |
+| `SendGuildWarResponse` | C1 `61`, len 4 | Aceptar o rechazar la guerra. |
+| `SendGuildInfoRequest` | C1 `66`, len 8 | `GuildId` little-endian. |
+| `SendGuildRoleAssignRequest` | C1 `E1`, len 15 | Tipo, rol y nombre de 10 bytes. |
+| `SendGuildRelationshipChangeRequest` | C1 `E5`, len 7 | Alianza/hostilidad con `TargetPlayerId` big-endian. |
+| `SendGuildRelationshipChangeResponse` | C1 `E6`, len 8 | Respuesta a la relación propuesta. |
+| `SendRequestAllianceList` | C1 `E9`, len 3 | Lista de guilds aliadas. |
+| `SendRemoveAllianceGuildRequest` | C1 `EB/01`, len 12 | Nombre de guild de 8 bytes. |
+| `SendFriendListRequest` | C1 `C0`, len 3 | Lista de amigos. |
+| `SendFriendAddRequest` | C1 `C1`, len 13 | Nombre de 10 bytes. |
+| `SendFriendDelete` | C1 `C3`, len 13 | Nombre de 10 bytes. |
+| `SendFriendAddResponse` | C1 `C2`, len 14 | Aceptar o rechazar, con el nombre del solicitante. |
+| `SendSetFriendOnlineState` | C1 `C4`, len 4 | El managed normaliza cualquier valor distinto de 1 a 0. |
+
+Queda pendiente probar en juego la creación de guild, la asignación de roles, las
+alianzas/hostilidades y el flujo completo de amigos.
+
 ## Segunda capa (features completas)
 
-Con el lote 2 y el lote social de trade/party, la capa de paquetes de NPC,
-quests, crafting, baúl, mascotas, trade y party ya está cubierta; lo que falta de
-esos sistemas es el flujo de UI en juego.
+Con el lote 2 y el lote social de trade/party/guild/amigos, la capa de paquetes
+de NPC, quests, crafting, baúl, mascotas, trade, party, guild y amigos ya está
+cubierta; lo que falta de esos sistemas es el flujo de UI en juego.
 
-- **Guild, amigos, cartas y salas de chat**: `SendGuild*`, `SendFriend*`,
-  `SendLetter*`, `SendChatRoom*`, `SendRequestAllianceList`,
-  `SendRemoveAllianceGuildRequest`.
+- **Cartas y salas de chat**: `SendLetter*`, `SendChatRoom*`.
 - **Tienda personal**: `SendPlayerShopOpen`, `SendPlayerShopClose`,
   `SendPlayerShopSetItemPrice`, `SendPlayerShopSetItemPriceExtended`,
   `SendPlayerShopItemListRequest`, `SendPlayerShopItemBuyRequest`,
@@ -181,31 +213,25 @@ esos sistemas es el flujo de UI en juego.
 
 1. **Lote crítico** (hecho el 2026-10-31): combate, items, mapa y personajes.
 2. **Lote NPC/quest/crafting/baúl** (hecho el 2026-11-01): el lote 2 de arriba.
-3. **Lote social** (en curso): trade y party hechos el 2026-11-01; quedan guild,
-   amigos y tienda personal.
+3. **Lote social** (en curso): trade, party, guild y amigos hechos el
+   2026-11-01; queda la tienda personal.
 4. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 124 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 106 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
 | Llamadas | Función | Header | Código | Longitud |
 |---:|---|---|---|---|
-| 10 | `SendGuildRelationshipChangeRequest` | C1Header | `E5` | 7 |
 | 9 | `SendCashShopStorageListRequest` | C1HeaderWithSubCode | `D2/05` | 10 |
 | 8 | `SendMiniGameOpeningStateRequest` | C1Header | `91` | 5 |
 | 6 | `SendCashShopPointInfoRequest` | C1HeaderWithSubCode | `D2/01` | 4 |
 | 5 | `SendCastleSiegeDefenseUpgradeRequest` | C1HeaderWithSubCode | `B2/07` | 20 |
 | 5 | `SendCashShopOpenState` | C1HeaderWithSubCode | `D2/02` | 5 |
 | 4 | `SendPlayerShopItemListRequest` | C3HeaderWithSubCode | `3F/05` | 16 |
-| 4 | `SendGuildListRequest` | C1Header | `52` | 3 |
-| 4 | `SendGuildWarResponse` | C1Header | `61` | 4 |
-| 4 | `SendSetFriendOnlineState` | C1Header | `C4` | 4 |
 | 3 | `SendCastleSiegeTaxChangeRequest` | C1HeaderWithSubCode | `B2/09` | 9 |
-| 3 | `SendGuildJoinRequest` | C1Header | `50` | 5 |
-| 3 | `SendGuildRelationshipChangeResponse` | C1Header | `E6` | 8 |
 | 3 | `SendEventChipExitDialog` | C1Header | `97` | 3 |
 | 3 | `SendDuelStartRequest` | C3HeaderWithSubCode | `AA/01` | 16 |
 | 2 | `SendPlayerShopOpen` | C3HeaderWithSubCode | `3F/02` | 30 |
@@ -221,12 +247,6 @@ bridge) y sirve para priorizar.
 | 2 | `SendCashShopStorageItemConsumeRequest` | C1HeaderWithSubCode | `D2/0B` | 15 |
 | 2 | `SendLetterDeleteRequest` | C1Header | `C8` | 6 |
 | 2 | `SendLetterReadRequest` | C1Header | `C7` | 6 |
-| 2 | `SendGuildJoinResponse` | C1Header | `51` | 6 |
-| 2 | `SendGuildMasterAnswer` | C1Header | `54` | 4 |
-| 2 | `SendGuildRoleAssignRequest` | C1Header | `E1` | 15 |
-| 2 | `SendRequestAllianceList` | C1Header | `E9` | 3 |
-| 2 | `SendFriendAddRequest` | C1Header | `C1` | 13 |
-| 2 | `SendFriendAddResponse` | C1Header | `C2` | 14 |
 | 2 | `SendMuHelperStatusChangeRequest` | C1HeaderWithSubCode | `BF/51` | 5 |
 | 2 | `SendGensJoinRequest` | C1HeaderWithSubCode | `F8/01` | 5 |
 | 2 | `SendGensRewardRequest` | C1HeaderWithSubCode | `F8/09` | 5 |
@@ -266,12 +286,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendCashShopItemGiftRequest` | C1HeaderWithSubCode | `D2/04` | 234 |
 | 1 | `SendCashShopEventItemListRequest` | C1HeaderWithSubCode | `D2/13` | 8 |
 | 1 | `SendLetterSendRequest` | C4Header | `C5` | — |
-| 1 | `SendGuildKickPlayerRequest` | C1Header | `53` | — |
-| 1 | `SendGuildCreateRequest` | C1Header | `55` | 44 |
-| 1 | `SendGuildInfoRequest` | C1Header | `66` | 8 |
-| 1 | `SendRemoveAllianceGuildRequest` | C1HeaderWithSubCode | `EB/01` | 12 |
-| 1 | `SendFriendListRequest` | C1Header | `C0` | 3 |
-| 1 | `SendFriendDelete` | C1Header | `C3` | 13 |
 | 1 | `SendChatRoomCreateRequest` | C1Header | `CA` | 13 |
 | 1 | `SendChatRoomInvitationRequest` | C1Header | `CB` | 19 |
 | 1 | `SendIllusionTempleEnterRequest` | C1HeaderWithSubCode | `BF/00` | 6 |
