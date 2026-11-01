@@ -1257,6 +1257,11 @@ void PacketFunctions_ClientToServer::SendLahapJewelMixRequest(MixType operation,
 
 void PacketFunctions_ClientToServer::SendPartyListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the party list request is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x42 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPartyListRequest = LoadManagedSymbol<::SendPartyListRequest>("SendPartyListRequest");
     if (!dotnet_SendPartyListRequest)
     {
@@ -1264,10 +1269,16 @@ void PacketFunctions_ClientToServer::SendPartyListRequest()
     }
 
     dotnet_SendPartyListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPartyPlayerKickRequest(BYTE playerIndex)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the party kick request is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0x43, playerIndex };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPartyPlayerKickRequest = LoadManagedSymbol<::SendPartyPlayerKickRequest>("SendPartyPlayerKickRequest");
     if (!dotnet_SendPartyPlayerKickRequest)
     {
@@ -1275,10 +1286,23 @@ void PacketFunctions_ClientToServer::SendPartyPlayerKickRequest(BYTE playerIndex
     }
 
     dotnet_SendPartyPlayerKickRequest(this->GetHandle(), playerIndex);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPartyInviteRequest(uint16_t targetPlayerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the party invite is written here. The target
+    // player id is a big-endian short.
+    const BYTE packet[5] = {
+        0xC1,
+        0x05,
+        0x40,
+        static_cast<BYTE>((targetPlayerId >> 8) & 0xFF),
+        static_cast<BYTE>(targetPlayerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPartyInviteRequest = LoadManagedSymbol<::SendPartyInviteRequest>("SendPartyInviteRequest");
     if (!dotnet_SendPartyInviteRequest)
     {
@@ -1286,10 +1310,23 @@ void PacketFunctions_ClientToServer::SendPartyInviteRequest(uint16_t targetPlaye
     }
 
     dotnet_SendPartyInviteRequest(this->GetHandle(), targetPlayerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPartyInviteResponse(BYTE accepted, uint16_t requesterId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the party invite response is written here.
+    const BYTE packet[6] = {
+        0xC1,
+        0x06,
+        0x41,
+        accepted,
+        static_cast<BYTE>((requesterId >> 8) & 0xFF),
+        static_cast<BYTE>(requesterId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPartyInviteResponse = LoadManagedSymbol<::SendPartyInviteResponse>("SendPartyInviteResponse");
     if (!dotnet_SendPartyInviteResponse)
     {
@@ -1297,6 +1334,7 @@ void PacketFunctions_ClientToServer::SendPartyInviteResponse(BYTE accepted, uint
     }
 
     dotnet_SendPartyInviteResponse(this->GetHandle(), accepted, requesterId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendWalkRequest(BYTE sourceX, BYTE sourceY, BYTE stepCount, BYTE targetRotation, const BYTE* directions, uint32_t directionsByteLength)
@@ -1834,6 +1872,11 @@ void PacketFunctions_ClientToServer::SendRageAttackRangeRequest(uint16_t skillId
 
 void PacketFunctions_ClientToServer::SendTradeCancel()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the trade cancel is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x3D };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTradeCancel = LoadManagedSymbol<::SendTradeCancel>("SendTradeCancel");
     if (!dotnet_SendTradeCancel)
     {
@@ -1841,10 +1884,16 @@ void PacketFunctions_ClientToServer::SendTradeCancel()
     }
 
     dotnet_SendTradeCancel(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTradeButtonStateChange(TradeButtonState newState)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the trade button state change is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0x3C, static_cast<BYTE>(newState) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTradeButtonStateChange = LoadManagedSymbol<::SendTradeButtonStateChange>("SendTradeButtonStateChange");
     if (!dotnet_SendTradeButtonStateChange)
     {
@@ -1852,10 +1901,23 @@ void PacketFunctions_ClientToServer::SendTradeButtonStateChange(TradeButtonState
     }
 
     dotnet_SendTradeButtonStateChange(this->GetHandle(), newState);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTradeRequest(uint16_t playerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the trade request is written here. The player
+    // id is a big-endian short in a C3 packet.
+    const BYTE packet[5] = {
+        0xC3,
+        0x05,
+        0x36,
+        static_cast<BYTE>((playerId >> 8) & 0xFF),
+        static_cast<BYTE>(playerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTradeRequest = LoadManagedSymbol<::SendTradeRequest>("SendTradeRequest");
     if (!dotnet_SendTradeRequest)
     {
@@ -1863,10 +1925,16 @@ void PacketFunctions_ClientToServer::SendTradeRequest(uint16_t playerId)
     }
 
     dotnet_SendTradeRequest(this->GetHandle(), playerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendTradeRequestResponse(BYTE tradeAccepted)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the trade request response is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0x37, tradeAccepted };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendTradeRequestResponse = LoadManagedSymbol<::SendTradeRequestResponse>("SendTradeRequestResponse");
     if (!dotnet_SendTradeRequestResponse)
     {
@@ -1874,10 +1942,26 @@ void PacketFunctions_ClientToServer::SendTradeRequestResponse(BYTE tradeAccepted
     }
 
     dotnet_SendTradeRequestResponse(this->GetHandle(), tradeAccepted);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSetTradeMoney(uint32_t amount)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the trade money is written here. Byte 3 is
+    // padding before the little-endian amount.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0x3A,
+        0x00,
+        static_cast<BYTE>(amount & 0xFF),
+        static_cast<BYTE>((amount >> 8) & 0xFF),
+        static_cast<BYTE>((amount >> 16) & 0xFF),
+        static_cast<BYTE>((amount >> 24) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSetTradeMoney = LoadManagedSymbol<::SendSetTradeMoney>("SendSetTradeMoney");
     if (!dotnet_SendSetTradeMoney)
     {
@@ -1885,6 +1969,7 @@ void PacketFunctions_ClientToServer::SendSetTradeMoney(uint32_t amount)
     }
 
     dotnet_SendSetTradeMoney(this->GetHandle(), amount);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendLetterDeleteRequest(uint16_t letterIndex)
