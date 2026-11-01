@@ -228,6 +228,22 @@ void PacketFunctions_ClientToServer::SendResetCharacterPointRequest()
 
 void PacketFunctions_ClientToServer::SendPlayerShopSetItemPrice(BYTE itemSlot, uint32_t price)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the shop item price is written here. The price
+    // is a little-endian integer.
+    const BYTE packet[9] = {
+        0xC3,
+        0x09,
+        0x3F,
+        0x01,
+        itemSlot,
+        static_cast<BYTE>(price & 0xFF),
+        static_cast<BYTE>((price >> 8) & 0xFF),
+        static_cast<BYTE>((price >> 16) & 0xFF),
+        static_cast<BYTE>((price >> 24) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopSetItemPrice = LoadManagedSymbol<::SendPlayerShopSetItemPrice>("SendPlayerShopSetItemPrice");
     if (!dotnet_SendPlayerShopSetItemPrice)
     {
@@ -235,10 +251,30 @@ void PacketFunctions_ClientToServer::SendPlayerShopSetItemPrice(BYTE itemSlot, u
     }
 
     dotnet_SendPlayerShopSetItemPrice(this->GetHandle(), itemSlot, price);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopOpen(const char16_t* storeName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, opening the personal shop is written here. The
+    // store name is a 26-byte UTF-8 field.
+    constexpr std::size_t StoreNameFieldLength = 26;
+    constexpr std::size_t StoreNameOffset = 4;
+
+    if (storeName == nullptr)
+    {
+        return;
+    }
+
+    const std::string storeNameText = Core::Text::ToUtf8(storeName);
+    const std::size_t storeNameLength = Utf8LengthAtMost(storeNameText, StoreNameFieldLength);
+
+    BYTE packet[30] = { 0xC3, 0x1E, 0x3F, 0x02 };
+    memcpy(packet + StoreNameOffset, storeNameText.data(), storeNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopOpen = LoadManagedSymbol<::SendPlayerShopOpen>("SendPlayerShopOpen");
     if (!dotnet_SendPlayerShopOpen)
     {
@@ -246,10 +282,16 @@ void PacketFunctions_ClientToServer::SendPlayerShopOpen(const char16_t* storeNam
     }
 
     dotnet_SendPlayerShopOpen(this->GetHandle(), storeName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopClose()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, closing the personal shop is written here.
+    const BYTE packet[4] = { 0xC3, 0x04, 0x3F, 0x03 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopClose = LoadManagedSymbol<::SendPlayerShopClose>("SendPlayerShopClose");
     if (!dotnet_SendPlayerShopClose)
     {
@@ -257,10 +299,36 @@ void PacketFunctions_ClientToServer::SendPlayerShopClose()
     }
 
     dotnet_SendPlayerShopClose(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopItemListRequest(uint16_t playerId, const char16_t* playerName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the shop item list request is written here.
+    constexpr std::size_t PlayerNameFieldLength = 10;
+    constexpr std::size_t PlayerNameOffset = 6;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameFieldLength);
+
+    BYTE packet[16] = {
+        0xC3,
+        0x10,
+        0x3F,
+        0x05,
+        static_cast<BYTE>((playerId >> 8) & 0xFF),
+        static_cast<BYTE>(playerId & 0xFF),
+    };
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopItemListRequest = LoadManagedSymbol<::SendPlayerShopItemListRequest>("SendPlayerShopItemListRequest");
     if (!dotnet_SendPlayerShopItemListRequest)
     {
@@ -268,10 +336,38 @@ void PacketFunctions_ClientToServer::SendPlayerShopItemListRequest(uint16_t play
     }
 
     dotnet_SendPlayerShopItemListRequest(this->GetHandle(), playerId, playerName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopItemBuyRequest(uint16_t playerId, const char16_t* playerName, BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the shop item buy request is written here.
+    constexpr std::size_t PlayerNameFieldLength = 10;
+    constexpr std::size_t PlayerNameOffset = 6;
+    constexpr std::size_t ItemSlotOffset = 16;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameFieldLength);
+
+    BYTE packet[17] = {
+        0xC3,
+        0x11,
+        0x3F,
+        0x06,
+        static_cast<BYTE>((playerId >> 8) & 0xFF),
+        static_cast<BYTE>(playerId & 0xFF),
+    };
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+    packet[ItemSlotOffset] = itemSlot;
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopItemBuyRequest = LoadManagedSymbol<::SendPlayerShopItemBuyRequest>("SendPlayerShopItemBuyRequest");
     if (!dotnet_SendPlayerShopItemBuyRequest)
     {
@@ -279,10 +375,36 @@ void PacketFunctions_ClientToServer::SendPlayerShopItemBuyRequest(uint16_t playe
     }
 
     dotnet_SendPlayerShopItemBuyRequest(this->GetHandle(), playerId, playerName, itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopCloseOther(uint16_t playerId, const char16_t* playerName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, closing another player's shop is written here.
+    constexpr std::size_t PlayerNameFieldLength = 10;
+    constexpr std::size_t PlayerNameOffset = 6;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameFieldLength);
+
+    BYTE packet[16] = {
+        0xC3,
+        0x10,
+        0x3F,
+        0x07,
+        static_cast<BYTE>((playerId >> 8) & 0xFF),
+        static_cast<BYTE>(playerId & 0xFF),
+    };
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopCloseOther = LoadManagedSymbol<::SendPlayerShopCloseOther>("SendPlayerShopCloseOther");
     if (!dotnet_SendPlayerShopCloseOther)
     {
@@ -290,10 +412,31 @@ void PacketFunctions_ClientToServer::SendPlayerShopCloseOther(uint16_t playerId,
     }
 
     dotnet_SendPlayerShopCloseOther(this->GetHandle(), playerId, playerName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPlayerShopSetItemPriceExtended(uint32_t moneyPrice, uint16_t priceItemType, uint16_t requiredItemAmount, BYTE itemSlot)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the extended shop item price is written here.
+    // All the price fields are little-endian.
+    const BYTE packet[13] = {
+        0xC3,
+        0x0D,
+        0x3F,
+        0x09,
+        static_cast<BYTE>(moneyPrice & 0xFF),
+        static_cast<BYTE>((moneyPrice >> 8) & 0xFF),
+        static_cast<BYTE>((moneyPrice >> 16) & 0xFF),
+        static_cast<BYTE>((moneyPrice >> 24) & 0xFF),
+        static_cast<BYTE>(priceItemType & 0xFF),
+        static_cast<BYTE>((priceItemType >> 8) & 0xFF),
+        static_cast<BYTE>(requiredItemAmount & 0xFF),
+        static_cast<BYTE>((requiredItemAmount >> 8) & 0xFF),
+        itemSlot,
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendPlayerShopSetItemPriceExtended = LoadManagedSymbol<::SendPlayerShopSetItemPriceExtended>("SendPlayerShopSetItemPriceExtended");
     if (!dotnet_SendPlayerShopSetItemPriceExtended)
     {
@@ -301,6 +444,7 @@ void PacketFunctions_ClientToServer::SendPlayerShopSetItemPriceExtended(uint32_t
     }
 
     dotnet_SendPlayerShopSetItemPriceExtended(this->GetHandle(), moneyPrice, priceItemType, requiredItemAmount, itemSlot);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPickupItemRequest(uint16_t itemId)
