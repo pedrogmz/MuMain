@@ -26,8 +26,8 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
 ## Resumen
 
 - **193** wrappers en total.
-- **99** siguen sin rama `__EMSCRIPTEN__`.
-- **94** ya tienen rama nativa:
+- **94** siguen sin rama `__EMSCRIPTEN__`.
+- **99** ya tienen rama nativa:
   - Movimiento, login y NPCs: `SendPing`, `SendWalkRequest`,
     `SendRequestCharacterList`, `SendSelectCharacter`, `SendFocusCharacter`,
     `SendTalkToNpcRequest`, `SendCloseNpcRequest`, `SendBuyItemFromNpcRequest`,
@@ -71,7 +71,10 @@ nada. También se revisaron `PacketFunctions_ChatServer.cpp`,
     `SendPlayerShopClose`, `SendPlayerShopSetItemPrice`,
     `SendPlayerShopSetItemPriceExtended`, `SendPlayerShopItemListRequest`,
     `SendPlayerShopItemBuyRequest`, `SendPlayerShopCloseOther`.
-- De los 99 pendientes, **22 no tienen ninguna llamada** desde el cliente.
+  - Cartas y salas de chat (detalle abajo): `SendLetterDeleteRequest`,
+    `SendLetterReadRequest`, `SendLetterSendRequest`, `SendChatRoomCreateRequest`,
+    `SendChatRoomInvitationRequest`.
+- De los 94 pendientes, **22 no tienen ninguna llamada** desde el cliente.
 - Los `SendLogin*` del catálogo no se usan en WASM: el login se escribe en
   `PacketFunctions_ClientToServer_Custom::SendLogin`.
 - Las funciones de `PacketFunctions_ChatServer` no aplican con OpenMU, que
@@ -201,13 +204,28 @@ alianzas/hostilidades y el flujo completo de amigos.
 Queda pendiente probar en juego abrir/cerrar la tienda, fijar precios en zen y
 por item, listar y comprar.
 
+## Cartas y salas de chat (2026-11-01)
+
+| Función | Paquete | Notas |
+|---|---|---|
+| `SendLetterDeleteRequest` | C1 `C8`, len 6 | Índice little-endian. |
+| `SendLetterReadRequest` | C1 `C7`, len 6 | Índice little-endian. |
+| `SendLetterSendRequest` | C4 `C5`, variable | Longitud big-endian; receptor 10 y título 60 bytes; mensaje UTF-8 con terminador. |
+| `SendChatRoomCreateRequest` | C1 `CA`, len 13 | Nombre del amigo de 10 bytes. |
+| `SendChatRoomInvitationRequest` | C1 `CB`, len 19 | `RoomId` y `RequestId` big-endian. |
+
+`SendLetterListRequest` sigue sin rama porque no tiene ninguna llamada desde el
+cliente; la lista de cartas llega por otro camino.
+
+Queda pendiente probar en juego el envío, lectura y borrado de cartas, y la
+creación e invitación a salas de chat (requiere otro personaje).
+
 ## Segunda capa (features completas)
 
-Con el lote 2 y el lote social completo (trade, party, guild, amigos y tienda
-personal), la capa de paquetes de esos sistemas ya está cubierta; lo que falta de
-ellos es el flujo de UI en juego.
+Con el lote 2, el lote social completo y las cartas/salas de chat, la capa de
+paquetes de esos sistemas ya está cubierta; lo que falta de ellos es el flujo de
+UI en juego.
 
-- **Cartas y salas de chat**: `SendLetter*`, `SendChatRoom*`.
 - **Eventos y sistemas especiales**: Blood Castle, Devil Square, Chaos Castle,
   Illusion Temple, Doppelganger, Lucky Coin, Gens, CryWolf, Kanturu, Castle
   Siege, Cash Shop y MuHelper.
@@ -230,11 +248,12 @@ ellos es el flujo de UI en juego.
 2. **Lote NPC/quest/crafting/baúl** (hecho el 2026-11-01): el lote 2 de arriba.
 3. **Lote social** (hecho el 2026-11-01): trade, party, guild, amigos y tienda
    personal.
-4. **Eventos/cash shop/castle siege/MuHelper**.
+4. **Cartas y salas de chat** (hecho el 2026-11-01): el bloque de arriba.
+5. **Eventos/cash shop/castle siege/MuHelper**.
 
 ## Listado completo de wrappers pendientes
 
-La siguiente tabla es la foto vigente de los 99 wrappers que siguen sin rama nativa. La columna
+La siguiente tabla es la foto vigente de los 94 wrappers que siguen sin rama nativa. La columna
 `Llamadas` cuenta las llamadas desde `src/source` (sin contar la definición del
 bridge) y sirve para priorizar.
 
@@ -257,8 +276,6 @@ bridge) y sirve para priorizar.
 | 2 | `SendCrywolfContractRequest` | C1HeaderWithSubCode | `BD/03` | 6 |
 | 2 | `SendSantaClausItemRequest` | C1HeaderWithSubCode | `D0/10` | 4 |
 | 2 | `SendCashShopStorageItemConsumeRequest` | C1HeaderWithSubCode | `D2/0B` | 15 |
-| 2 | `SendLetterDeleteRequest` | C1Header | `C8` | 6 |
-| 2 | `SendLetterReadRequest` | C1Header | `C7` | 6 |
 | 2 | `SendMuHelperStatusChangeRequest` | C1HeaderWithSubCode | `BF/51` | 5 |
 | 2 | `SendGensJoinRequest` | C1HeaderWithSubCode | `F8/01` | 5 |
 | 2 | `SendGensRewardRequest` | C1HeaderWithSubCode | `F8/09` | 5 |
@@ -293,9 +310,6 @@ bridge) y sirve para priorizar.
 | 1 | `SendCashShopItemBuyRequest` | C1HeaderWithSubCode | `D2/03` | 23 |
 | 1 | `SendCashShopItemGiftRequest` | C1HeaderWithSubCode | `D2/04` | 234 |
 | 1 | `SendCashShopEventItemListRequest` | C1HeaderWithSubCode | `D2/13` | 8 |
-| 1 | `SendLetterSendRequest` | C4Header | `C5` | — |
-| 1 | `SendChatRoomCreateRequest` | C1Header | `CA` | 13 |
-| 1 | `SendChatRoomInvitationRequest` | C1Header | `CB` | 19 |
 | 1 | `SendIllusionTempleEnterRequest` | C1HeaderWithSubCode | `BF/00` | 6 |
 | 1 | `SendIllusionTempleSkillRequest` | C1HeaderWithSubCode | `BF/02` | 8 |
 | 1 | `SendIllusionTempleRewardRequest` | C1HeaderWithSubCode | `BF/05` | 4 |
