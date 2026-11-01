@@ -2018,6 +2018,36 @@ void PacketFunctions_ClientToServer::SendLetterReadRequest(uint16_t letterIndex)
 
 void PacketFunctions_ClientToServer::SendGuildKickPlayerRequest(const char16_t* playerName, const char16_t* securityCode)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild kick request is written here. The
+    // player name is a 10-byte field and the security code is a variable-length
+    // UTF-8 field with a terminator.
+    constexpr std::size_t PlayerNameFieldLength = 10;
+    constexpr std::size_t PlayerNameOffset = 3;
+    constexpr std::size_t SecurityCodeOffset = 13;
+    constexpr std::size_t MaxPacketLength = 0xFF;
+    constexpr std::size_t MaxSecurityCodeLength = MaxPacketLength - SecurityCodeOffset - 1;
+
+    if (playerName == nullptr || securityCode == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameFieldLength);
+    const std::string securityCodeText = Core::Text::ToUtf8(securityCode);
+    const std::size_t securityCodeLength = Utf8LengthAtMost(securityCodeText, MaxSecurityCodeLength);
+
+    BYTE packet[MaxPacketLength] = {
+        0xC1,
+        static_cast<BYTE>(SecurityCodeOffset + securityCodeLength + 1),
+        0x53,
+    };
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+    memcpy(packet + SecurityCodeOffset, securityCodeText.data(), securityCodeLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, packet[1]);
+#else
     static const auto dotnet_SendGuildKickPlayerRequest = LoadManagedSymbol<::SendGuildKickPlayerRequest>("SendGuildKickPlayerRequest");
     if (!dotnet_SendGuildKickPlayerRequest)
     {
@@ -2025,10 +2055,23 @@ void PacketFunctions_ClientToServer::SendGuildKickPlayerRequest(const char16_t* 
     }
 
     dotnet_SendGuildKickPlayerRequest(this->GetHandle(), playerName, securityCode);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildJoinRequest(uint16_t guildMasterPlayerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild join request is written here. The
+    // guild master player id is a big-endian short.
+    const BYTE packet[5] = {
+        0xC1,
+        0x05,
+        0x50,
+        static_cast<BYTE>((guildMasterPlayerId >> 8) & 0xFF),
+        static_cast<BYTE>(guildMasterPlayerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildJoinRequest = LoadManagedSymbol<::SendGuildJoinRequest>("SendGuildJoinRequest");
     if (!dotnet_SendGuildJoinRequest)
     {
@@ -2036,10 +2079,23 @@ void PacketFunctions_ClientToServer::SendGuildJoinRequest(uint16_t guildMasterPl
     }
 
     dotnet_SendGuildJoinRequest(this->GetHandle(), guildMasterPlayerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildJoinResponse(BYTE accepted, uint16_t requesterId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild join response is written here.
+    const BYTE packet[6] = {
+        0xC1,
+        0x06,
+        0x51,
+        static_cast<BYTE>(accepted == 1 ? 1 : 0),
+        static_cast<BYTE>((requesterId >> 8) & 0xFF),
+        static_cast<BYTE>(requesterId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildJoinResponse = LoadManagedSymbol<::SendGuildJoinResponse>("SendGuildJoinResponse");
     if (!dotnet_SendGuildJoinResponse)
     {
@@ -2047,10 +2103,16 @@ void PacketFunctions_ClientToServer::SendGuildJoinResponse(BYTE accepted, uint16
     }
 
     dotnet_SendGuildJoinResponse(this->GetHandle(), accepted, requesterId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild list request is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0x52 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildListRequest = LoadManagedSymbol<::SendGuildListRequest>("SendGuildListRequest");
     if (!dotnet_SendGuildListRequest)
     {
@@ -2058,10 +2120,38 @@ void PacketFunctions_ClientToServer::SendGuildListRequest()
     }
 
     dotnet_SendGuildListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildCreateRequest(const char16_t* guildName, const BYTE* guildEmblem, uint32_t guildEmblemByteLength)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild creation is written here. Byte 3 is
+    // padding before the 8-byte name and the 32-byte emblem.
+    constexpr std::size_t GuildNameFieldLength = 8;
+    constexpr std::size_t GuildNameOffset = 4;
+    constexpr std::size_t GuildEmblemFieldLength = 32;
+    constexpr std::size_t GuildEmblemOffset = 12;
+
+    if (guildName == nullptr || (guildEmblem == nullptr && guildEmblemByteLength > 0))
+    {
+        return;
+    }
+
+    const std::string guildNameText = Core::Text::ToUtf8(guildName);
+    const std::size_t guildNameLength = Utf8LengthAtMost(guildNameText, GuildNameFieldLength);
+    const std::size_t guildEmblemLength =
+        guildEmblemByteLength > GuildEmblemFieldLength ? GuildEmblemFieldLength : guildEmblemByteLength;
+
+    BYTE packet[44] = { 0xC1, 0x2C, 0x55 };
+    memcpy(packet + GuildNameOffset, guildNameText.data(), guildNameLength);
+    if (guildEmblemLength > 0)
+    {
+        memcpy(packet + GuildEmblemOffset, guildEmblem, guildEmblemLength);
+    }
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildCreateRequest = LoadManagedSymbol<::SendGuildCreateRequest>("SendGuildCreateRequest");
     if (!dotnet_SendGuildCreateRequest)
     {
@@ -2069,6 +2159,7 @@ void PacketFunctions_ClientToServer::SendGuildCreateRequest(const char16_t* guil
     }
 
     dotnet_SendGuildCreateRequest(this->GetHandle(), guildName, guildEmblem, guildEmblemByteLength);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildCreateRequest075(const char16_t* guildName, const BYTE* guildEmblem, uint32_t guildEmblemByteLength)
@@ -2084,6 +2175,11 @@ void PacketFunctions_ClientToServer::SendGuildCreateRequest075(const char16_t* g
 
 void PacketFunctions_ClientToServer::SendGuildMasterAnswer(BYTE showCreationDialog)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild master answer is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0x54, static_cast<BYTE>(showCreationDialog == 1 ? 1 : 0) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildMasterAnswer = LoadManagedSymbol<::SendGuildMasterAnswer>("SendGuildMasterAnswer");
     if (!dotnet_SendGuildMasterAnswer)
     {
@@ -2091,6 +2187,7 @@ void PacketFunctions_ClientToServer::SendGuildMasterAnswer(BYTE showCreationDial
     }
 
     dotnet_SendGuildMasterAnswer(this->GetHandle(), showCreationDialog);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendCancelGuildCreation()
@@ -2106,6 +2203,11 @@ void PacketFunctions_ClientToServer::SendCancelGuildCreation()
 
 void PacketFunctions_ClientToServer::SendGuildWarResponse(BYTE accepted)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild war response is written here.
+    const BYTE packet[4] = { 0xC1, 0x04, 0x61, static_cast<BYTE>(accepted == 1 ? 1 : 0) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildWarResponse = LoadManagedSymbol<::SendGuildWarResponse>("SendGuildWarResponse");
     if (!dotnet_SendGuildWarResponse)
     {
@@ -2113,10 +2215,26 @@ void PacketFunctions_ClientToServer::SendGuildWarResponse(BYTE accepted)
     }
 
     dotnet_SendGuildWarResponse(this->GetHandle(), accepted);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildInfoRequest(uint32_t guildId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild info request is written here. Byte 3
+    // is padding before the little-endian guild id.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0x66,
+        0x00,
+        static_cast<BYTE>(guildId & 0xFF),
+        static_cast<BYTE>((guildId >> 8) & 0xFF),
+        static_cast<BYTE>((guildId >> 16) & 0xFF),
+        static_cast<BYTE>((guildId >> 24) & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildInfoRequest = LoadManagedSymbol<::SendGuildInfoRequest>("SendGuildInfoRequest");
     if (!dotnet_SendGuildInfoRequest)
     {
@@ -2124,10 +2242,29 @@ void PacketFunctions_ClientToServer::SendGuildInfoRequest(uint32_t guildId)
     }
 
     dotnet_SendGuildInfoRequest(this->GetHandle(), guildId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildRoleAssignRequest(uint32_t role, const char16_t* playerName, BYTE type)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the role assignment is written here.
+    constexpr std::size_t PlayerNameFieldLength = 10;
+    constexpr std::size_t PlayerNameOffset = 5;
+
+    if (playerName == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerNameText = Core::Text::ToUtf8(playerName);
+    const std::size_t playerNameLength = Utf8LengthAtMost(playerNameText, PlayerNameFieldLength);
+
+    BYTE packet[15] = { 0xC1, 0x0F, 0xE1, type, static_cast<BYTE>(role) };
+    memcpy(packet + PlayerNameOffset, playerNameText.data(), playerNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildRoleAssignRequest = LoadManagedSymbol<::SendGuildRoleAssignRequest>("SendGuildRoleAssignRequest");
     if (!dotnet_SendGuildRoleAssignRequest)
     {
@@ -2135,6 +2272,7 @@ void PacketFunctions_ClientToServer::SendGuildRoleAssignRequest(uint32_t role, c
     }
 
     dotnet_SendGuildRoleAssignRequest(this->GetHandle(), role, playerName, type);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildTypeChangeRequest(BYTE guildType)
@@ -2150,6 +2288,20 @@ void PacketFunctions_ClientToServer::SendGuildTypeChangeRequest(BYTE guildType)
 
 void PacketFunctions_ClientToServer::SendGuildRelationshipChangeRequest(GuildRelationshipType relationshipType, GuildRequestType requestType, uint16_t targetPlayerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild relationship request is written
+    // here. The target player id is a big-endian short.
+    const BYTE packet[7] = {
+        0xC1,
+        0x07,
+        0xE5,
+        static_cast<BYTE>(relationshipType),
+        static_cast<BYTE>(requestType),
+        static_cast<BYTE>((targetPlayerId >> 8) & 0xFF),
+        static_cast<BYTE>(targetPlayerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildRelationshipChangeRequest = LoadManagedSymbol<::SendGuildRelationshipChangeRequest>("SendGuildRelationshipChangeRequest");
     if (!dotnet_SendGuildRelationshipChangeRequest)
     {
@@ -2157,10 +2309,26 @@ void PacketFunctions_ClientToServer::SendGuildRelationshipChangeRequest(GuildRel
     }
 
     dotnet_SendGuildRelationshipChangeRequest(this->GetHandle(), relationshipType, requestType, targetPlayerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendGuildRelationshipChangeResponse(GuildRelationshipType relationshipType, GuildRequestType requestType, BYTE response, uint16_t targetPlayerId)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the guild relationship response is written
+    // here.
+    const BYTE packet[8] = {
+        0xC1,
+        0x08,
+        0xE6,
+        static_cast<BYTE>(relationshipType),
+        static_cast<BYTE>(requestType),
+        static_cast<BYTE>(response == 1 ? 1 : 0),
+        static_cast<BYTE>((targetPlayerId >> 8) & 0xFF),
+        static_cast<BYTE>(targetPlayerId & 0xFF),
+    };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendGuildRelationshipChangeResponse = LoadManagedSymbol<::SendGuildRelationshipChangeResponse>("SendGuildRelationshipChangeResponse");
     if (!dotnet_SendGuildRelationshipChangeResponse)
     {
@@ -2168,10 +2336,16 @@ void PacketFunctions_ClientToServer::SendGuildRelationshipChangeResponse(GuildRe
     }
 
     dotnet_SendGuildRelationshipChangeResponse(this->GetHandle(), relationshipType, requestType, response, targetPlayerId);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRequestAllianceList()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the alliance list request is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0xE9 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRequestAllianceList = LoadManagedSymbol<::SendRequestAllianceList>("SendRequestAllianceList");
     if (!dotnet_SendRequestAllianceList)
     {
@@ -2179,10 +2353,30 @@ void PacketFunctions_ClientToServer::SendRequestAllianceList()
     }
 
     dotnet_SendRequestAllianceList(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendRemoveAllianceGuildRequest(const char16_t* guildName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the remove-alliance-guild request is written
+    // here.
+    constexpr std::size_t GuildNameFieldLength = 8;
+    constexpr std::size_t GuildNameOffset = 4;
+
+    if (guildName == nullptr)
+    {
+        return;
+    }
+
+    const std::string guildNameText = Core::Text::ToUtf8(guildName);
+    const std::size_t guildNameLength = Utf8LengthAtMost(guildNameText, GuildNameFieldLength);
+
+    BYTE packet[12] = { 0xC1, 0x0C, 0xEB, 0x01 };
+    memcpy(packet + GuildNameOffset, guildNameText.data(), guildNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendRemoveAllianceGuildRequest = LoadManagedSymbol<::SendRemoveAllianceGuildRequest>("SendRemoveAllianceGuildRequest");
     if (!dotnet_SendRemoveAllianceGuildRequest)
     {
@@ -2190,6 +2384,7 @@ void PacketFunctions_ClientToServer::SendRemoveAllianceGuildRequest(const char16
     }
 
     dotnet_SendRemoveAllianceGuildRequest(this->GetHandle(), guildName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendPingResponse()
@@ -2256,6 +2451,11 @@ void PacketFunctions_ClientToServer::SendCraftingDialogCloseRequest()
 
 void PacketFunctions_ClientToServer::SendFriendListRequest()
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the friend list request is written here.
+    const BYTE packet[3] = { 0xC1, 0x03, 0xC0 };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFriendListRequest = LoadManagedSymbol<::SendFriendListRequest>("SendFriendListRequest");
     if (!dotnet_SendFriendListRequest)
     {
@@ -2263,10 +2463,29 @@ void PacketFunctions_ClientToServer::SendFriendListRequest()
     }
 
     dotnet_SendFriendListRequest(this->GetHandle());
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFriendAddRequest(const char16_t* friendName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the friend add request is written here.
+    constexpr std::size_t FriendNameFieldLength = 10;
+    constexpr std::size_t FriendNameOffset = 3;
+
+    if (friendName == nullptr)
+    {
+        return;
+    }
+
+    const std::string friendNameText = Core::Text::ToUtf8(friendName);
+    const std::size_t friendNameLength = Utf8LengthAtMost(friendNameText, FriendNameFieldLength);
+
+    BYTE packet[13] = { 0xC1, 0x0D, 0xC1 };
+    memcpy(packet + FriendNameOffset, friendNameText.data(), friendNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFriendAddRequest = LoadManagedSymbol<::SendFriendAddRequest>("SendFriendAddRequest");
     if (!dotnet_SendFriendAddRequest)
     {
@@ -2274,10 +2493,29 @@ void PacketFunctions_ClientToServer::SendFriendAddRequest(const char16_t* friend
     }
 
     dotnet_SendFriendAddRequest(this->GetHandle(), friendName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendFriendDelete(const char16_t* friendName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the friend delete request is written here.
+    constexpr std::size_t FriendNameFieldLength = 10;
+    constexpr std::size_t FriendNameOffset = 3;
+
+    if (friendName == nullptr)
+    {
+        return;
+    }
+
+    const std::string friendNameText = Core::Text::ToUtf8(friendName);
+    const std::size_t friendNameLength = Utf8LengthAtMost(friendNameText, FriendNameFieldLength);
+
+    BYTE packet[13] = { 0xC1, 0x0D, 0xC3 };
+    memcpy(packet + FriendNameOffset, friendNameText.data(), friendNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFriendDelete = LoadManagedSymbol<::SendFriendDelete>("SendFriendDelete");
     if (!dotnet_SendFriendDelete)
     {
@@ -2285,6 +2523,7 @@ void PacketFunctions_ClientToServer::SendFriendDelete(const char16_t* friendName
     }
 
     dotnet_SendFriendDelete(this->GetHandle(), friendName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChatRoomCreateRequest(const char16_t* friendName)
@@ -2300,6 +2539,24 @@ void PacketFunctions_ClientToServer::SendChatRoomCreateRequest(const char16_t* f
 
 void PacketFunctions_ClientToServer::SendFriendAddResponse(BYTE accepted, const char16_t* friendRequesterName)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the friend add response is written here.
+    constexpr std::size_t FriendNameFieldLength = 10;
+    constexpr std::size_t FriendNameOffset = 4;
+
+    if (friendRequesterName == nullptr)
+    {
+        return;
+    }
+
+    const std::string friendNameText = Core::Text::ToUtf8(friendRequesterName);
+    const std::size_t friendNameLength = Utf8LengthAtMost(friendNameText, FriendNameFieldLength);
+
+    BYTE packet[14] = { 0xC1, 0x0E, 0xC2, static_cast<BYTE>(accepted == 1 ? 1 : 0) };
+    memcpy(packet + FriendNameOffset, friendNameText.data(), friendNameLength);
+
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendFriendAddResponse = LoadManagedSymbol<::SendFriendAddResponse>("SendFriendAddResponse");
     if (!dotnet_SendFriendAddResponse)
     {
@@ -2307,10 +2564,17 @@ void PacketFunctions_ClientToServer::SendFriendAddResponse(BYTE accepted, const 
     }
 
     dotnet_SendFriendAddResponse(this->GetHandle(), accepted, friendRequesterName);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendSetFriendOnlineState(BYTE onlineState)
 {
+#ifdef __EMSCRIPTEN__
+    // Without the managed bridge, the friend online state is written here. The
+    // managed packet treats any value other than 1 as false.
+    const BYTE packet[4] = { 0xC1, 0x04, 0xC4, static_cast<BYTE>(onlineState == 1 ? 1 : 0) };
+    Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
+#else
     static const auto dotnet_SendSetFriendOnlineState = LoadManagedSymbol<::SendSetFriendOnlineState>("SendSetFriendOnlineState");
     if (!dotnet_SendSetFriendOnlineState)
     {
@@ -2318,6 +2582,7 @@ void PacketFunctions_ClientToServer::SendSetFriendOnlineState(BYTE onlineState)
     }
 
     dotnet_SendSetFriendOnlineState(this->GetHandle(), onlineState);
+#endif
 }
 
 void PacketFunctions_ClientToServer::SendChatRoomInvitationRequest(const char16_t* friendName, uint16_t roomId, uint32_t requestId)
