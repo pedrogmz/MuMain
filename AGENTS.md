@@ -53,3 +53,18 @@ Quick references:
 Don't perform large retroactive cleanups of existing code to fit the rules unless
 the user explicitly asks for it. Apply the rules going forward; pre-existing
 code can be refactored opportunistically when you're already touching it.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `pedrogmz/MuMain`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
