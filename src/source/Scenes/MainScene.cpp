@@ -206,6 +206,7 @@ static void InitializeMainScene()
  */
 static void InitializeSceneFrame()
 {
+    ApplyCharacterEffectsEarthQuake();
     // Decays per reference frame, like DefaultCamera samples it.
     if (REFERENCE_FRAME_STEP > 0)
     {
@@ -316,6 +317,11 @@ static void UpdateGameEntities()
         MoveParticles();
     }
     MovePointers();
+    {
+        FRAME_PROFILE(UpdateEffects);
+        UpdateCharacterEffects();
+        UpdateObjectEffects();
+    }
 
     g_Direction.CheckDirection();
 
