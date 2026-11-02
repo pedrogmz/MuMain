@@ -13,6 +13,7 @@
 #include "Render/Renderer/MuRenderer.h"
 #include "Engine/Object/ZzzObject.h"
 #include "Engine/Object/ZzzCharacter.h"
+#include "GameLogic/Events/CSChaosCastle.h"
 #include "Render/Terrain/ZzzLodTerrain.h"
 #include "Engine/Object/ZzzInterface.h"
 #include "Input/Selection.h"
@@ -321,6 +322,9 @@ static void UpdateGameEntities()
         FRAME_PROFILE(UpdateEffects);
         UpdateCharacterEffects();
         UpdateObjectEffects();
+        UpdateMountEffects();
+        UpdateEffectModelEffects();
+        UpdateTerrainEffects();
     }
 
     g_Direction.CheckDirection();

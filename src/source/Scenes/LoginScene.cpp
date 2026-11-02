@@ -22,6 +22,7 @@
 #include "UI/Windows/CreditWin.h"
 #include "Core/Input/Input.h"
 #include "Network/Server/WSclient.h"
+#include "Network/Reconnect/ReconnectManager.h"
 #include "Core/Utilities/Log/muConsoleDebug.h"
 #include "I18N/All.h"
 #include "Engine/Object/ZzzCharacter.h"
@@ -265,8 +266,13 @@ void CreateLogInScene()
 
     CSceneUICoordinator::Instance().CreateLoginScene();
 
-    CurrentProtocolState = REQUEST_JOIN_SERVER;
-    CreateSocket(szServerIpAddress, g_ServerPort);
+    // The in-game reconnect logs in again on the game server it lost; otherwise the
+    // login starts at the connect server's list.
+    const ReconnectManager& reconnect = ReconnectManager::Instance();
+    if (reconnect.IsActive())
+        ConnectForLogin(reconnect.GetServerIp(), reconnect.GetServerPort());
+    else
+        ConnectForLogin(szServerIpAddress, g_ServerPort);
 
     GuildInputEnable = false;
     TabInputEnable = false;
@@ -331,6 +337,8 @@ void NewMoveLogInScene()
         ThePetProcess().UpdatePets();
         UpdateCharacterEffects();
         UpdateObjectEffects();
+        UpdateMountEffects();
+        UpdateEffectModelEffects();
     }
 
     // ESC menu toggle is handled by CSceneUICoordinator::Update()
