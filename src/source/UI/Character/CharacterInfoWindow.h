@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "UI/Core/WindowObject.h"
@@ -110,6 +111,7 @@ namespace mu::ui::window
         void BuildSubjectTexts();
         void BuildTableTexts();
         void BuildAttributeLines();
+        std::uint16_t GetBaseStatValue(int stat) const;
 
         struct CharacterInfoRmlModel
         {

@@ -5,6 +5,7 @@
 #include "UI/Core/WindowSystem.h"
 #include "UI/Core/WindowGeometry.h"
 #include "Character/CharacterManager.h"
+#include "GameLogic/Character/CharacterStatCaps.h"
 #include "GameLogic/Items/CSItemOption.h"
 #include "Audio/DSPlaySound.h"
 #include "Engine/Object/ZzzCharacter.h"
@@ -309,8 +310,30 @@ void mu::ui::window::CCharacterInfoWindow::RmlClickIncreaseStat(int stat)
     if (stat < 0 || stat >= iCount)
         return;
 
+    if (GetBaseStatValue(stat) >= GameLogic::Character::MaxStatValue)
+        return;
+
     SocketClient->ToGameServer()->SendIncreaseCharacterStatPoint(static_cast<CharacterStatAttribute>(stat));
     PlayBuffer(SOUND_CLICK01);
+}
+
+std::uint16_t mu::ui::window::CCharacterInfoWindow::GetBaseStatValue(int stat) const
+{
+    switch (stat)
+    {
+    case STAT_STRENGTH:
+        return CharacterAttribute->Strength;
+    case STAT_DEXTERITY:
+        return CharacterAttribute->Dexterity;
+    case STAT_VITALITY:
+        return CharacterAttribute->Vitality;
+    case STAT_ENERGY:
+        return CharacterAttribute->Energy;
+    case STAT_CHARISMA:
+        return CharacterAttribute->Charisma;
+    default:
+        return 0;
+    }
 }
 
 void mu::ui::window::CCharacterInfoWindow::RmlClickQuest()
@@ -565,7 +588,7 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
 
     WORD wStrength;
 
-    wStrength = CharacterAttribute->Strength + CharacterAttribute->AddStrength;
+    wStrength = GameLogic::Character::AddStatValue(CharacterAttribute->Strength, CharacterAttribute->AddStrength);
 
     const char* strengthSource = AttributeSource(g_isCharacterBuff((&Hero->Object), eBuff_SecretPotion1),
                                                  CharacterAttribute->AddStrength != 0);
@@ -609,7 +632,8 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
 
     if (g_isCharacterBuff((&Hero->Object), eBuff_AddAG))
     {
-        WORD wDexterity = CharacterAttribute->Dexterity + CharacterAttribute->AddDexterity;
+        WORD wDexterity = GameLogic::Character::AddStatValue(
+            CharacterAttribute->Dexterity, CharacterAttribute->AddDexterity);
         iAttackRating += wDexterity;
         iAttackRatingPK += wDexterity;
         if (PartyNumber >= 3)
@@ -889,7 +913,8 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
                                                   CharacterAttribute->AddDexterity != 0);
 
     wchar_t strDexterity[32];
-    WORD wDexterity = CharacterAttribute->Dexterity + CharacterAttribute->AddDexterity;
+    WORD wDexterity = GameLogic::Character::AddStatValue(
+        CharacterAttribute->Dexterity, CharacterAttribute->AddDexterity);
     mu_swprintf(strDexterity, L"%d", wDexterity);
     SyncField(m_RmlView.Binder(), &CharacterInfoRmlModel::agiValueText, "agi_value_text",
               StringUtils::WideToNarrow(strDexterity));
@@ -1139,7 +1164,7 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
     model.agiLines.push_back({ StringUtils::WideToNarrow(strBlocking), "base" });
     m_RmlView.MarkDirty("agi_lines");
 
-    WORD wVitality = CharacterAttribute->Vitality + CharacterAttribute->AddVitality;
+    WORD wVitality = GameLogic::Character::AddStatValue(CharacterAttribute->Vitality, CharacterAttribute->AddVitality);
 
     // The Our-Forces HP buff counts as boosted like an item bonus does, but it also has to
     // recompute the total first, so this one keeps its branches rather than folding into
@@ -1152,7 +1177,7 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
     else if (g_isCharacterBuff((&Hero->Object), eBuff_Hp_up_Ourforces))
     {
         CharacterMachine->CalculateAll();
-        wVitality = CharacterAttribute->Vitality + CharacterAttribute->AddVitality;
+        wVitality = GameLogic::Character::AddStatValue(CharacterAttribute->Vitality, CharacterAttribute->AddVitality);
         vitalitySource = "boosted";
     }
     else if (CharacterAttribute->AddVitality)
@@ -1209,7 +1234,7 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
     }
     m_RmlView.MarkDirty("vit_lines");
 
-    WORD wEnergy = CharacterAttribute->Energy + CharacterAttribute->AddEnergy;
+    WORD wEnergy = GameLogic::Character::AddStatValue(CharacterAttribute->Energy, CharacterAttribute->AddEnergy);
 
     const char* energySource = AttributeSource(g_isCharacterBuff((&Hero->Object), eBuff_SecretPotion4),
                                                CharacterAttribute->AddEnergy != 0);
@@ -1508,7 +1533,7 @@ void mu::ui::window::CCharacterInfoWindow::BuildAttributeLines()
     {
         WORD wCharisma;
 
-        wCharisma = CharacterAttribute->Charisma + CharacterAttribute->AddCharisma;
+        wCharisma = GameLogic::Character::AddStatValue(CharacterAttribute->Charisma, CharacterAttribute->AddCharisma);
 
         const char* charismaSource = AttributeSource(g_isCharacterBuff((&Hero->Object), eBuff_SecretPotion5),
                                                      CharacterAttribute->AddCharisma != 0);

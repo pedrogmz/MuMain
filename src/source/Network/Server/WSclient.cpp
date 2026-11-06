@@ -47,6 +47,7 @@
 
 #include "Audio/DSPlaySound.h"
 
+#include "GameLogic/Character/CharacterStatCaps.h"
 #include "GameLogic/Events/MatchEvent.h"
 #include "GameLogic/Monsters/MonsterAttackPlay.h"
 #include "Engine/AI/GOBoid.h"
@@ -118,6 +119,8 @@ using namespace mu::ui::window;
 #include "Network/Server/ServerMessageTexts.h"
 #include "GameLogic/Items/ItemCategories.h"
 #include "Data/GameData/ItemData/ItemModelSlots.h"
+
+namespace StatCaps = GameLogic::Character;
 
 #define MAX_DEBUG_MAX 10
 
@@ -7072,21 +7075,21 @@ void ReceiveAddPoint(const BYTE* ReceiveBuffer)
         switch (Data->Result & 0xf)
         {
         case 0:
-            CharacterAttribute->Strength++;
+            CharacterAttribute->Strength = StatCaps::AddStatValue(CharacterAttribute->Strength, 1);
             break;
         case 1:
-            CharacterAttribute->Dexterity++;
+            CharacterAttribute->Dexterity = StatCaps::AddStatValue(CharacterAttribute->Dexterity, 1);
             break;
         case 2:
-            CharacterAttribute->Vitality++;
+            CharacterAttribute->Vitality = StatCaps::AddStatValue(CharacterAttribute->Vitality, 1);
             CharacterAttribute->LifeMax = Data->Max;
             break;
         case 3:
-            CharacterAttribute->Energy++;
+            CharacterAttribute->Energy = StatCaps::AddStatValue(CharacterAttribute->Energy, 1);
             CharacterAttribute->ManaMax = Data->Max;
             break;
         case 4:
-            CharacterAttribute->Charisma++;
+            CharacterAttribute->Charisma = StatCaps::AddStatValue(CharacterAttribute->Charisma, 1);
             break;
         }
         CharacterAttribute->SkillManaMax = Data->SkillManaMax;
@@ -7107,19 +7110,19 @@ void ReceiveAddPointExtended(const BYTE* ReceiveBuffer)
     switch (Data->StatType)
     {
     case 0:
-        CharacterAttribute->Strength += Data->AddedAmount;
+        CharacterAttribute->Strength = StatCaps::AddStatValue(CharacterAttribute->Strength, Data->AddedAmount);
         break;
     case 1:
-        CharacterAttribute->Dexterity += Data->AddedAmount;
+        CharacterAttribute->Dexterity = StatCaps::AddStatValue(CharacterAttribute->Dexterity, Data->AddedAmount);
         break;
     case 2:
-        CharacterAttribute->Vitality += Data->AddedAmount;
+        CharacterAttribute->Vitality = StatCaps::AddStatValue(CharacterAttribute->Vitality, Data->AddedAmount);
         break;
     case 3:
-        CharacterAttribute->Energy += Data->AddedAmount;
+        CharacterAttribute->Energy = StatCaps::AddStatValue(CharacterAttribute->Energy, Data->AddedAmount);
         break;
     case 4:
-        CharacterAttribute->Charisma += Data->AddedAmount;
+        CharacterAttribute->Charisma = StatCaps::AddStatValue(CharacterAttribute->Charisma, Data->AddedAmount);
         break;
     }
 
@@ -7134,11 +7137,11 @@ void ReceiveAddPointExtended(const BYTE* ReceiveBuffer)
 void ReceiveSetPointsExtended(const BYTE* ReceiveBuffer)
 {
     auto Data = (LPPRECEIVE_SET_POINTS_EXTENDED)ReceiveBuffer;
-    CharacterAttribute->Strength = Data->Strength;
-    CharacterAttribute->Dexterity = Data->Dexterity;
-    CharacterAttribute->Vitality = Data->Vitality;
-    CharacterAttribute->Energy = Data->Energy;
-    CharacterAttribute->Charisma = Data->Charisma;
+    CharacterAttribute->Strength = StatCaps::ClampStatValue(Data->Strength);
+    CharacterAttribute->Dexterity = StatCaps::ClampStatValue(Data->Dexterity);
+    CharacterAttribute->Vitality = StatCaps::ClampStatValue(Data->Vitality);
+    CharacterAttribute->Energy = StatCaps::ClampStatValue(Data->Energy);
+    CharacterAttribute->Charisma = StatCaps::ClampStatValue(Data->Charisma);
 
     CharacterMachine->CalculateAll();
 

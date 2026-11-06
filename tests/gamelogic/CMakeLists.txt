@@ -1,4 +1,10 @@
 mu_add_test(
+    NAME test_character_stat_caps
+    SOURCES
+        test_character_stat_caps.cpp
+)
+
+mu_add_test(
     NAME test_boid_steering
     SOURCES
         test_boid_steering.cpp
