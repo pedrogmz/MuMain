@@ -17,7 +17,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #pragma comment(lib, "dbghelp.lib")
-#else
+#elif !defined(__EMSCRIPTEN__)
 #include <cxxabi.h>
 #include <dlfcn.h>
 #include <execinfo.h>
@@ -57,7 +57,7 @@ std::string FunctionAt(void* address)
         if (SymFromAddr(GetCurrentProcess(), reinterpret_cast<DWORD64>(address), nullptr, symbol))
             return symbol->Name;
     }
-#else
+#elif !defined(__EMSCRIPTEN__)
     Dl_info info{};
     if (address != nullptr && dladdr(address, &info) != 0 && info.dli_sname != nullptr)
     {
@@ -104,7 +104,7 @@ void Note([[maybe_unused]] const char* kind)
     Callers callers{};
 #ifdef _WIN32
     CaptureStackBackTrace(2, CallerDepth, callers.data(), nullptr);
-#else
+#elif !defined(__EMSCRIPTEN__)
     std::array<void*, CallerDepth + 2> frames{};
     const int count = backtrace(frames.data(), static_cast<int>(frames.size()));
     for (int i = 2; i < count; ++i)
