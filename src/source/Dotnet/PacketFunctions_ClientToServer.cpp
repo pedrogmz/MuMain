@@ -75,7 +75,7 @@ void SendChatPacket(int32_t handle, BYTE code, const char16_t* name, const char1
 } // namespace
 #endif
 
-void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attackSpeed)
+void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attackSpeed, uint16_t magicSpeed)
 {
 #ifdef __EMSCRIPTEN__
     BYTE packet[12] = { 0xC3, 0x0C, 0x0E, 0x00 };
@@ -85,6 +85,8 @@ void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attac
     packet[7] = static_cast<BYTE>((tickCount >> 24) & 0xFF);
     packet[8] = static_cast<BYTE>(attackSpeed & 0xFF);
     packet[9] = static_cast<BYTE>((attackSpeed >> 8) & 0xFF);
+    packet[10] = static_cast<BYTE>(magicSpeed & 0xFF);
+    packet[11] = static_cast<BYTE>((magicSpeed >> 8) & 0xFF);
     Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
 #else
     static const auto dotnet_SendPing = LoadManagedSymbol<::SendPing>("SendPing");
@@ -93,7 +95,7 @@ void PacketFunctions_ClientToServer::SendPing(uint32_t tickCount, uint16_t attac
         return;
     }
 
-    dotnet_SendPing(this->GetHandle(), tickCount, attackSpeed);
+    dotnet_SendPing(this->GetHandle(), tickCount, attackSpeed, magicSpeed);
 #endif
 }
 
@@ -1881,20 +1883,28 @@ void PacketFunctions_ClientToServer::SendCashShopEventItemListRequest(uint32_t c
 #endif
 }
 
-void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin)
+void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin, const char16_t* password)
 {
 #ifdef __EMSCRIPTEN__
     // Without the managed bridge, the unlock request is written here. The pin
-    // is a little-endian short.
-    const BYTE packet[7] = {
+    // is a little-endian short and the account password is a 20-byte UTF-8
+    // field.
+    constexpr std::size_t PasswordFieldLength = 20;
+    constexpr std::size_t PasswordOffset = 6;
+
+    const std::string passwordText = password == nullptr ? std::string() : Core::Text::ToUtf8(password);
+    const std::size_t passwordLength = Utf8LengthAtMost(passwordText, PasswordFieldLength);
+
+    BYTE packet[26] = {
         0xC1,
-        0x07,
+        0x1A,
         0x83,
         0x00,
         static_cast<BYTE>(pin & 0xFF),
         static_cast<BYTE>((pin >> 8) & 0xFF),
-        0x00,
     };
+    memcpy(packet + PasswordOffset, passwordText.data(), passwordLength);
+
     Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
 #else
     static const auto dotnet_SendUnlockVault = LoadManagedSymbol<::SendUnlockVault>("SendUnlockVault");
@@ -1903,7 +1913,7 @@ void PacketFunctions_ClientToServer::SendUnlockVault(uint16_t pin)
         return;
     }
 
-    dotnet_SendUnlockVault(this->GetHandle(), pin);
+    dotnet_SendUnlockVault(this->GetHandle(), pin, password);
 #endif
 }
 
@@ -3269,7 +3279,7 @@ void PacketFunctions_ClientToServer::SendPingResponse()
 #endif
 }
 
-void PacketFunctions_ClientToServer::SendItemRepair(BYTE inventoryItemSlot)
+void PacketFunctions_ClientToServer::SendItemRepair(BYTE inventoryItemSlot, BYTE isSelfRepair)
 {
     static const auto dotnet_SendItemRepair = LoadManagedSymbol<::SendItemRepair>("SendItemRepair");
     if (!dotnet_SendItemRepair)
@@ -3277,7 +3287,7 @@ void PacketFunctions_ClientToServer::SendItemRepair(BYTE inventoryItemSlot)
         return;
     }
 
-    dotnet_SendItemRepair(this->GetHandle(), inventoryItemSlot);
+    dotnet_SendItemRepair(this->GetHandle(), inventoryItemSlot, isSelfRepair);
 }
 
 void PacketFunctions_ClientToServer::SendChaosMachineMixRequest(ChaosMachineMixType mixType, BYTE socketSlot)
@@ -3609,7 +3619,7 @@ void PacketFunctions_ClientToServer::SendIllusionTempleEnterRequest(BYTE mapNumb
 #endif
 }
 
-void PacketFunctions_ClientToServer::SendIllusionTempleSkillRequest(uint16_t skillNumber, BYTE targetObjectIndex, BYTE distance)
+void PacketFunctions_ClientToServer::SendIllusionTempleSkillRequest(uint16_t skillNumber, uint16_t targetObjectIndex, BYTE distance)
 {
 #ifdef __EMSCRIPTEN__
     // Without the managed bridge, the IllusionTempleSkillRequest packet is written here.
@@ -4541,15 +4551,16 @@ void PacketFunctions_ClientToServer::SendDuelChannelJoinRequest(BYTE channelId)
 #endif
 }
 
-void PacketFunctions_ClientToServer::SendDuelChannelQuitRequest()
+void PacketFunctions_ClientToServer::SendDuelChannelQuitRequest(BYTE channelId)
 {
 #ifdef __EMSCRIPTEN__
     // Without the managed bridge, the DuelChannelQuitRequest packet is written here.
-    BYTE packet[4] = {};
+    BYTE packet[5] = {};
     packet[0] = 0xC3;
-    packet[1] = 0x04;
+    packet[1] = 0x05;
     packet[2] = 0xAA;
     packet[3] = 0x09;
+    packet[4] = static_cast<BYTE>(channelId);
     Connection_SendRaw(this->GetHandle(), packet, sizeof(packet));
 #else
     static const auto dotnet_SendDuelChannelQuitRequest = LoadManagedSymbol<::SendDuelChannelQuitRequest>("SendDuelChannelQuitRequest");
@@ -4558,7 +4569,7 @@ void PacketFunctions_ClientToServer::SendDuelChannelQuitRequest()
         return;
     }
 
-    dotnet_SendDuelChannelQuitRequest(this->GetHandle());
+    dotnet_SendDuelChannelQuitRequest(this->GetHandle(), channelId);
 #endif
 }
 
@@ -4614,4 +4625,59 @@ void PacketFunctions_ClientToServer::SendDiscordUnlinkRequest()
     }
 
     dotnet_SendDiscordUnlinkRequest(this->GetHandle());
+}
+
+void PacketFunctions_ClientToServer::SendCharacterRenameRequest(const char16_t* oldName, const char16_t* newName)
+{
+    static const auto dotnet_SendCharacterRenameRequest = LoadManagedSymbol<::SendCharacterRenameRequest>("SendCharacterRenameRequest");
+    if (!dotnet_SendCharacterRenameRequest)
+    {
+        return;
+    }
+
+    dotnet_SendCharacterRenameRequest(this->GetHandle(), oldName, newName);
+}
+
+void PacketFunctions_ClientToServer::SendInventoryItemEquipRequest(BYTE inventorySlot, BYTE value)
+{
+    static const auto dotnet_SendInventoryItemEquipRequest = LoadManagedSymbol<::SendInventoryItemEquipRequest>("SendInventoryItemEquipRequest");
+    if (!dotnet_SendInventoryItemEquipRequest)
+    {
+        return;
+    }
+
+    dotnet_SendInventoryItemEquipRequest(this->GetHandle(), inventorySlot, value);
+}
+
+void PacketFunctions_ClientToServer::SendRequestD000()
+{
+    static const auto dotnet_SendRequestD000 = LoadManagedSymbol<::SendRequestD000>("SendRequestD000");
+    if (!dotnet_SendRequestD000)
+    {
+        return;
+    }
+
+    dotnet_SendRequestD000(this->GetHandle());
+}
+
+void PacketFunctions_ClientToServer::SendGameServerChannelRequest(BYTE value)
+{
+    static const auto dotnet_SendGameServerChannelRequest = LoadManagedSymbol<::SendGameServerChannelRequest>("SendGameServerChannelRequest");
+    if (!dotnet_SendGameServerChannelRequest)
+    {
+        return;
+    }
+
+    dotnet_SendGameServerChannelRequest(this->GetHandle(), value);
+}
+
+void PacketFunctions_ClientToServer::SendGameGuardAuthResponse(const BYTE* data, uint32_t dataByteLength)
+{
+    static const auto dotnet_SendGameGuardAuthResponse = LoadManagedSymbol<::SendGameGuardAuthResponse>("SendGameGuardAuthResponse");
+    if (!dotnet_SendGameGuardAuthResponse)
+    {
+        return;
+    }
+
+    dotnet_SendGameGuardAuthResponse(this->GetHandle(), data, dataByteLength);
 }

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Core/Utilities/Random.h"
 #include "App/Control/ControlTaps.h"
+#include "Audio/SoundPlaces.h"
 #include "Core/Utilities/Log/MuLogger.h"
 #include "UI/Chat/Chat.h"
 #include "UI/Chat/ChatMessages.h"
@@ -2184,7 +2185,7 @@ void ReceiveNotice(const BYTE* ReceiveBuffer)
     }
     else if (Data->Result >= 10 && Data->Result <= 15)
     {
-        if (Data->Notice != nullptr && Data->Notice[0] != '\0')
+        if (Data->Notice[0] != '\0')
         {
             UI::Hud::AddSlideNotice(Data->Count, Data->Delay, Text, Data->Result - 10, Data->Speed / 10.0f,
                                     Data->Color);
@@ -3660,7 +3661,7 @@ void ReceiveAttackDamage(CHARACTER* c, OBJECT* o, const bool success, const int 
             g_CMonkSystem.SetRepeatedly(damage, damageType, bDoubleEnable, bEndRepeatedly);
             if (bEndRepeatedly)
             {
-                g_CMonkSystem.RenderRepeatedly(key, o);
+                g_CMonkSystem.CreateRepeatedDamagePoints(key, o);
             }
         }
         else if (damage == 0 && !SuppressOptionalPresentation)
@@ -4200,6 +4201,8 @@ void ReceiveMagicFinish(const BYTE* ReceiveBuffer)
     case AT_SKILL_ALICE_BERSERKER_STR:
         UnRegisterBuff(eBuff_Berserker, o);
         break;
+    default:
+        break;
     }
 }
 
@@ -4381,6 +4384,9 @@ BOOL ReceiveMagic(const BYTE* ReceiveBuffer, int Size, BOOL bEncrypted)
     CHARACTER* tc = &CharactersClient[TargetIndex];
     OBJECT* so = &sc->Object;
     OBJECT* to = &tc->Object;
+    // The skill's sounds play for the caster (Q-SM13).
+    std::optional<Audio::ScopedSoundPlace> casterPlace;
+    Audio::PlaceCharacter(casterPlace, *sc);
 
     if (MagicNumber != AT_SKILL_COMBO)
     {
@@ -5385,6 +5391,9 @@ BOOL ReceiveMagicContinue(const BYTE* ReceiveBuffer, int Size, BOOL bEncrypted)
 
     CHARACTER* sc = &CharactersClient[FindCharacterIndex(Key)];
     OBJECT* so = &sc->Object;
+    // The skill's sounds play for the caster (Q-SM13).
+    std::optional<Audio::ScopedSoundPlace> casterPlace;
+    Audio::PlaceCharacter(casterPlace, *sc);
 
     sc->Skill = MagicNumber;
 
@@ -5856,6 +5865,9 @@ void ReceiveMagicPosition(const BYTE* ReceiveBuffer, int Size)
 
     CHARACTER* c = &CharactersClient[Index];
     OBJECT* o = &c->Object;
+    // The skill's sounds play for the caster (Q-SM13).
+    std::optional<Audio::ScopedSoundPlace> casterPlace;
+    Audio::PlaceCharacter(casterPlace, *c);
     CreateMagicShiny(c);
     PlayBuffer(SOUND_MAGIC);
     SetAction(o, PLAYER_SKILL_HELL);
@@ -6347,6 +6359,9 @@ void ReceiveGetItem(std::span<const BYTE> ReceiveBuffer)
             {
                 mu_swprintf(szMessage, L"%d %ls %ls", getGold, I18N::Game::Zen, I18N::Game::Obtained);
                 UI::Chat::PostSystem(szMessage, mu::ui::window::TYPE_SYSTEM_MESSAGE);
+                // Zen picked up sounds like a picked-up item; the original
+                // played nothing (Q-SM12).
+                PlayBuffer(SOUND_GET_ITEM01, &Hero->Object);
             }
         }
         else
@@ -11604,8 +11619,6 @@ void ReceiveCrownSwitchState(const BYTE* ReceiveBuffer)
 
     if (CrownSwitch == nullptr)
         return;
-    if (CrownSwitch->ID == nullptr)
-        return;
 
     switch (static_cast<CrownSwitchState>(pData->m_byState))
     {
@@ -11628,9 +11641,7 @@ void ReceiveCrownSwitchState(const BYTE* ReceiveBuffer)
         int otherKey = ((int)(pData->m_byKeyH) << 8) + pData->m_byKeyL;
         int otherIndex = FindCharacterIndex(otherKey);
         CHARACTER* other = &CharactersClient[otherIndex];
-        UI::Siege::ShowCrownNotice(UI::Siege::CrownNotice::SwitchActivatedByOther,
-                                    other != nullptr && other->ID != nullptr ? other->ID : L"",
-                                    CrownSwitch->ID);
+        UI::Siege::ShowCrownNotice(UI::Siege::CrownNotice::SwitchActivatedByOther, other->ID, CrownSwitch->ID);
         break;
     }
     }
@@ -15094,6 +15105,8 @@ bool CheckExceptionBuff(eBuffState buff, OBJECT* o, bool iserase)
             g_CharacterUnRegisterBuffList(o, bufflist);
         }
         break;
+        default:
+            break;
         }
 
         return true;
@@ -15166,6 +15179,8 @@ bool CheckExceptionBuff(eBuffState buff, OBJECT* o, bool iserase)
             g_CharacterUnRegisterBuff(o, eBuff_CastleRegimentDefense);
     }
     break;
+    default:
+        break;
     }
     return true;
 }
@@ -15349,6 +15364,8 @@ void InsertBuffLogicalEffect(eBuffState buff, OBJECT* o, const int bufftime)
             g_RegisterBuffTime(buff, bufftime);
         }
         break;
+        default:
+            break;
         }
     }
 }
@@ -15505,6 +15522,8 @@ void ClearBuffLogicalEffect(eBuffState buff, OBJECT* o)
             g_UnRegisterBuffTime(buff);
         }
         break;
+        default:
+            break;
         }
     }
 }
@@ -15724,6 +15743,8 @@ void InsertBuffPhysicalEffect(eBuffState buff, OBJECT* o)
         CreateEffect(BITMAP_LIGHT_RED, o->Position, o->Angle, o->Light, 2, o, -1, 0, 0, 0, 1.5f);
     }
     break;
+    default:
+        break;
     }
 }
 
@@ -15910,6 +15931,8 @@ void ClearBuffPhysicalEffect(eBuffState buff, OBJECT* o)
         DeleteEffect(BITMAP_LIGHT_RED, o, 2);
     }
     break;
+    default:
+        break;
     }
 }
 

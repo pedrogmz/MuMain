@@ -28,7 +28,7 @@
 #include "Engine/Object/ZzzInterface.h"
 #include "Camera/CameraProjection.h"
 #include "UI/Scaling/UITransform.h"
-
+#include "Render/Effects/EffectDraw.h"
 
 extern  int     WaterTextureNumber;
 extern  char* NUM_MUSIC;
@@ -276,9 +276,17 @@ namespace battleCastle
         }
     }
 
-    void RenderAurora(int Type, int RenderType, float x, float y, float sx, float sy, vec3_t Light)
+    // The pulse of a dark aurora: its second pass is lit by (1 - pulse) x pulse.
+    static float AuroraPulse()
     {
-        float   Luminosity = sinf(WorldTime * 0.0015f) * 0.3f + 0.7f;
+        return sinf(WorldTime * 0.0015f) * 0.3f + 0.7f;
+    }
+
+    void RenderAurora(int Type, int RenderType, float x, float y, float sx, float sy, const vec3_t light)
+    {
+        vec3_t Light;
+        VectorCopy(light, Light);
+        float Luminosity = AuroraPulse();
 
         if (RenderType == RENDER_DARK)
         {
@@ -291,14 +299,16 @@ namespace battleCastle
             Vector(Luminosity * Light[0], Luminosity * Light[1], Luminosity * Light[2], Light);
         }
 
-        RenderTerrainAlphaBitmap(Type, x, y, sx, sy, Light, WorldTime * 0.01f);
+        Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(
+            Render::EffectDrawing::Decal(Type, x, y, sx, sy, Light, WorldTime * 0.01f));
 
         if (RenderType == RENDER_DARK)
         {
             Luminosity = 1.f - Luminosity;
             Vector(Luminosity * Light[0], Luminosity * Light[1], Luminosity * Light[2], Light);
         }
-        RenderTerrainAlphaBitmap(Type, x, y, sx, sy, Light, -WorldTime * 0.01f);
+        Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(
+            Render::EffectDrawing::Decal(Type, x, y, sx, sy, Light, -WorldTime * 0.01f));
     }
 
     void SetBuildTimeLocation(OBJECT* o)
@@ -1268,10 +1278,10 @@ namespace battleCastle
                 b->RenderBody(RENDER_TEXTURE, look.alpha, look.blendMesh, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh);
                 Vector(0.3f, 0.3f, 0.3f, b->BodyLight);
-                b->RenderBody(RENDER_BRIGHT | RENDER_CHROME, look.alpha, 0.5f, look.blendMeshLight, look.blendMeshU,
+                b->RenderBody(RENDER_BRIGHT | RENDER_CHROME, look.alpha, 0, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh, BITMAP_CHROME);
                 Vector(0.2f, 0.2f, 0.5f, b->BodyLight);
-                b->RenderBody(RENDER_BRIGHT | RENDER_METAL, look.alpha, 0.5f, look.blendMeshLight, look.blendMeshU,
+                b->RenderBody(RENDER_BRIGHT | RENDER_METAL, look.alpha, 0, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh, BITMAP_CHROME);
                 Vector(1.f, 1.f, 1.f, b->BodyLight);
             }
@@ -1507,6 +1517,8 @@ namespace battleCastle
             }
             c->Object.HiddenMesh = -1;
             break;
+        default:
+            break;
         }
 
         return c;
@@ -1585,6 +1597,8 @@ namespace battleCastle
             }
         }
         return true;
+        default:
+            break;
         }
         return false;
     }
@@ -1690,6 +1704,8 @@ namespace battleCastle
                 g_fLifeStoneLocation[1] = o->Position[1];
             }
             break;
+        default:
+            break;
         }
         return false;
     }
@@ -1737,6 +1753,8 @@ namespace battleCastle
                 CreateEffect(BITMAP_JOINT_FORCE, o->Position, o->Angle, o->Light);
             }
             return true;
+        default:
+            break;
         }
         return false;
     }
@@ -1775,6 +1793,14 @@ namespace battleCastle
         }
     }
 
+    // The light a dark aurora's draw left on the body it stands under, which its next draw lit the body with.
+    static void SetDarkAuroraBodyLight(OBJECT* o)
+    {
+        const float pulse = AuroraPulse();
+        const float light = (1.f - pulse) * pulse;
+        Vector(light, light, light, o->Light);
+    }
+
     bool MoveBattleCastleMonsterVisual(OBJECT* o, BMD* b)
     {
         if (gMapManager.InBattleCastle() == false) return false;
@@ -1805,6 +1831,8 @@ namespace battleCastle
 
         case MODEL_GUARDIAN_STATUE:
             o->Angle[2] = 0.f;
+            if (!IsBattleCastleStart())
+                SetDarkAuroraBodyLight(o);
 
             Luminosity = sinf(WorldTime * 0.0005) * 0.58f + 0.42f;
             Vector(Luminosity * 0.2f, Luminosity * 0.7f, Luminosity * 1.f, Light);
@@ -1829,6 +1857,8 @@ namespace battleCastle
 
         case MODEL_CANON_TOWER:
             o->Angle[2] = 45.f;
+            if (IsBattleCastleStart())
+                SetDarkAuroraBodyLight(o);
             return true;
         }
 
@@ -1903,7 +1933,7 @@ namespace battleCastle
         return false;
     }
 
-    bool RenderBattleCastleMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
+    bool RenderBattleCastleMonsterVisual(const CHARACTER* c, const OBJECT* o, BMD* b)
     {
         if (gMapManager.InBattleCastle() == false)
             return false;
@@ -1943,7 +1973,7 @@ namespace battleCastle
         return false;
     }
 
-    bool    RenderBattleCastleMonsterCloth(CHARACTER* c, OBJECT* o, bool Translate, int Select)
+    bool RenderBattleCastleMonsterCloth(const CHARACTER* c, const OBJECT* o, bool Translate, int Select)
     {
         return false;
     }
@@ -1961,7 +1991,7 @@ namespace battleCastle
                 o->Live = false;
                 PlayBuffer(SOUND_HIT_GATE2);
                 SkinObjectMeshes(o, b, true);
-                b->RenderMeshEffect(0, MODEL_GATE_PART1);
+                b->SpawnMeshEffects(0, MODEL_GATE_PART1);
             }
             break;
 
@@ -1977,7 +2007,7 @@ namespace battleCastle
 
                     PlayBuffer(SOUND_BC_GUARD_STONE_DIS);
                     SkinObjectMeshes(o, b, true);
-                    b->RenderMeshEffect(0, MODEL_STONE_COFFIN);
+                    b->SpawnMeshEffects(0, MODEL_STONE_COFFIN);
                 }
             }
             break;
@@ -2058,10 +2088,10 @@ namespace battleCastle
                 b->RenderBody(RENDER_TEXTURE, look.alpha, look.blendMesh, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh);
                 Vector(0.3f, 0.3f, 0.3f, b->BodyLight);
-                b->RenderBody(RENDER_BRIGHT | RENDER_CHROME, look.alpha, 0.5f, look.blendMeshLight, look.blendMeshU,
+                b->RenderBody(RENDER_BRIGHT | RENDER_CHROME, look.alpha, 0, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh, BITMAP_CHROME);
                 Vector(0.2f, 0.2f, 0.5f, b->BodyLight);
-                b->RenderBody(RENDER_BRIGHT | RENDER_METAL, look.alpha, 0.5f, look.blendMeshLight, look.blendMeshU,
+                b->RenderBody(RENDER_BRIGHT | RENDER_METAL, look.alpha, 0, look.blendMeshLight, look.blendMeshU,
                               look.blendMeshV, look.hiddenMesh, BITMAP_CHROME);
                 Vector(1.f, 1.f, 1.f, b->BodyLight);
             }
@@ -2100,7 +2130,7 @@ namespace battleCastle
         return success;
     }
 
-    void RenderMonsterHitEffect(OBJECT* o)
+    void SpawnMonsterHitEffect(OBJECT* o)
     {
         if (gMapManager.InBattleCastle() == false) return;
 

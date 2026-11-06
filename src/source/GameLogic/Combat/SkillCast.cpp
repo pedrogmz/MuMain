@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Core/Utilities/Random.h"
 #include "GameLogic/Combat/SkillCast.h"
+#include "Audio/SoundPlaces.h"
 #include "Character/CharacterManager.h" // gCharacterManager
 #include "GameLogic/Social/MonkSystem.h" // g_CMonkSystem
 
@@ -166,6 +167,8 @@ bool SkillWarrior(CHARACTER* c, ITEM* p)
                 return false;
             }
             break;
+        default:
+            break;
         }
         int iMana, iSkillMana;
         gSkillManager.GetSkillInformation(Skill, 1, NULL, &iMana, NULL, &iSkillMana);
@@ -244,6 +247,8 @@ bool SkillWarrior(CHARACTER* c, ITEM* p)
                 if (CheckAttack())
                     Success = CastWarriorSkill(c, o, p, Skill);
                 break;
+            default:
+                break;
             }
         }
     }
@@ -284,6 +289,9 @@ bool SkillWarrior(CHARACTER* c, ITEM* p)
 
 void UseSkillWarrior(CHARACTER* c, OBJECT* o)
 {
+    // The skill's sounds play for the caster (Q-SM13).
+    std::optional<Audio::ScopedSoundPlace> casterPlace;
+    Audio::PlaceCharacter(casterPlace, *c);
     auto Skill = g_MovementSkill.m_bMagic ? CharacterAttribute->Skill[g_MovementSkill.m_iSkill] : static_cast<ActionSkillType>(g_MovementSkill.m_iSkill);
     LetHeroStop();
     c->Movement = false;
@@ -477,6 +485,8 @@ void UseSkillWizard(CHARACTER* c, OBJECT* o)
     case AT_SKILL_DEATHSTAB:
     case AT_SKILL_DEATHSTAB_STR:
         return;
+    default:
+        break;
     }
 
     if (Skill == AT_SKILL_DEATH_CANNON)
@@ -531,6 +541,8 @@ void UseSkillWizard(CHARACTER* c, OBJECT* o)
     SetPlayerMagic(c);
     LetHeroStop();
     break;
+    default:
+        break;
     }
 
     c->SkillSuccess = true;
@@ -746,6 +758,9 @@ void UseSkillSummon(CHARACTER* pCha, OBJECT* pObj)
 
 void UseSkillRagefighter(CHARACTER* pCha, OBJECT* pObj)
 {
+    // The skill's sounds play for the caster (Q-SM13).
+    std::optional<Audio::ScopedSoundPlace> casterPlace;
+    Audio::PlaceCharacter(casterPlace, *pCha);
     int iSkill = g_MovementSkill.m_bMagic ? CharacterAttribute->Skill[g_MovementSkill.m_iSkill] : g_MovementSkill.m_iSkill;
 
     ITEM* pLeftRing = &CharacterMachine->Equipment[EQUIPMENT_RING_LEFT];

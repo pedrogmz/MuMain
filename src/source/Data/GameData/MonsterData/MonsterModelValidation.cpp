@@ -6,7 +6,7 @@
 #include "Data/GameData/EffectData/EffectTypeCatalogue.h"
 #include "Data/GameData/MonsterData/MonsterModelSlots.h"
 #include "Data/GameData/MonsterData/MonsterModelsJson.h"
-#include "Data/GameData/MonsterData/MonsterSoundIds.h"
+#include "Core/Text/Utf8Path.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -38,64 +38,6 @@ private:
     std::vector<ItemDataIssue>& m_issues;
 };
 
-bool NamesSoundOfModel(const MonsterModelDefinition& model, const std::string& value)
-{
-    return std::any_of(model.sounds.begin(), model.sounds.end(),
-                       [&](const MonsterModelSound& sound) { return SoundNameOf(sound) == value; });
-}
-
-void ValidateSlotSet(const MonsterModelDefinition& model, const MonsterSoundSlotSet& slots, const std::string& key,
-                     ModelProblems& problems)
-{
-    for (size_t i = 0; i < slots.size(); ++i)
-    {
-        const std::string& value = slots[i];
-        if (value.empty() || NamesSoundOfModel(model, value) || FindMonsterSoundId(value))
-        {
-            continue;
-        }
-        problems.Add(ItemDataIssueSeverity::Fatal, key + "[" + std::to_string(i) + "]",
-                     "\"" + value +
-                         "\" is no sound of the model (its id, or its file when it has none) and no SOUND_ id");
-    }
-}
-
-void ValidateSounds(const MonsterModelDefinition& model, ModelProblems& problems)
-{
-    for (size_t i = 0; i < model.sounds.size(); ++i)
-    {
-        const std::string& id = model.sounds[i].id;
-        if (!id.empty() && !FindMonsterSoundId(id))
-        {
-            problems.Add(ItemDataIssueSeverity::Fatal, "sounds[" + std::to_string(i) + "].id",
-                         "\"" + id + "\" is not a SOUND_ id that code plays a model sound by");
-        }
-    }
-    if (model.soundSlots)
-    {
-        ValidateSlotSet(model, model.soundSlots->first, "soundSlots", problems);
-        if (model.soundSlots->second)
-        {
-            ValidateSlotSet(model, *model.soundSlots->second, "soundSlots.secondSet", problems);
-        }
-    }
-    for (size_t event = 0; event < model.soundEvents.size(); ++event)
-    {
-        const std::vector<std::string>& sounds = model.soundEvents[event].sounds;
-        for (size_t i = 0; i < sounds.size(); ++i)
-        {
-            if (NamesSoundOfModel(model, sounds[i]) || FindMonsterSoundId(sounds[i]))
-            {
-                continue;
-            }
-            problems.Add(ItemDataIssueSeverity::Fatal,
-                         "soundEvents[" + std::to_string(event) + "].sounds[" + std::to_string(i) + "]",
-                         "\"" + sounds[i] +
-                             "\" is no sound of the model (its id, or its file when it has none) and no SOUND_ id");
-        }
-    }
-}
-
 void ValidateParts(const MonsterModelDefinition& model, ModelProblems& problems)
 {
     for (size_t i = 0; i < model.parts.size(); ++i)
@@ -123,7 +65,7 @@ void ValidateParts(const MonsterModelDefinition& model, ModelProblems& problems)
 bool IsInClientFolder(const std::string& path, bool folder)
 {
 #ifdef _WIN32
-    const std::filesystem::path resolved = std::filesystem::u8path(path);
+    const std::filesystem::path resolved = Core::Text::PathFromUtf8(path);
 #else
     // The data spells files as they are on disk, but checks the way the game finds them.
     const std::filesystem::path resolved = MuResolvePath(path.c_str());
@@ -139,7 +81,6 @@ void ValidateMonsterModelNames(std::span<const MonsterModelDefinition> models, c
     for (const MonsterModelDefinition& model : models)
     {
         ModelProblems problems(source, model.slot, issues);
-        ValidateSounds(model, problems);
         for (size_t i = 0; i < model.bitmaps.size(); ++i)
         {
             if (!FindMonsterModelBitmapSlot(model.bitmaps[i].slot))
@@ -149,6 +90,17 @@ void ValidateMonsterModelNames(std::span<const MonsterModelDefinition> models, c
             }
         }
         ValidateParts(model, problems);
+        for (const CodeModelTimer& codeTimer : CodeModelTimers)
+        {
+            if (model.slot == codeTimer.slot &&
+                std::none_of(model.timers.begin(), model.timers.end(),
+                             [&codeTimer](const MonsterModelTimer& timer) { return timer.name == codeTimer.name; }))
+            {
+                problems.Add(ItemDataIssueSeverity::Error, "timers",
+                             "the game's code asks for the timer \"" + std::string(codeTimer.name) +
+                                 "\", which the model lacks: " + std::string(codeTimer.use));
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@
 #include "I18N/All.h"
 #include "UI/Scaling/UITransform.h"
 #include "Render/Text/CUIRenderText.h"
+#include "Render/Effects/EffectDraw.h"
 
 extern void MonsterMoveSandSmoke(OBJECT* o);
 extern void MonsterDieSandSmoke(OBJECT* o);
@@ -2118,7 +2119,7 @@ bool M34CryWolf1st::UpdateCryWolf1stMonsterEffects(CHARACTER* c, OBJECT* o, BMD*
     return false;
 }
 
-bool M34CryWolf1st::RenderCryWolf1stMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
+bool M34CryWolf1st::RenderCryWolf1stMonsterVisual(const CHARACTER* c, const OBJECT* o, BMD* b)
 {
     if (!IsCyrWolf1st() && !(gMapManager.InDevilSquare()))
         return false;
@@ -2160,8 +2161,10 @@ bool M34CryWolf1st::RenderCryWolf1stMonsterVisual(CHARACTER* c, OBJECT* o, BMD* 
 
         Vector(Light[0] * 2.0f, Light[1] * 2.0f, Light[2] * 2.0f, Light);
 
-        RenderTerrainAlphaBitmap(BITMAP_MAGIC_CIRCLE, o->Position[0], o->Position[1], 2.8f, 2.8f, Light, fRotation1);
-        RenderTerrainAlphaBitmap(BITMAP_MAGIC_CIRCLE, o->Position[0], o->Position[1], 3.6f, 3.6f, Light, fRotation2);
+        Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+            BITMAP_MAGIC_CIRCLE, o->Position[0], o->Position[1], 2.8f, 2.8f, Light, fRotation1));
+        Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+            BITMAP_MAGIC_CIRCLE, o->Position[0], o->Position[1], 3.6f, 3.6f, Light, fRotation2));
         DisableAlphaBlend();
 
         if (fRotation1 >= 360.0f)

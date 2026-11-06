@@ -1486,6 +1486,8 @@ void Action(CHARACTER* c, OBJECT* o, bool Now)
             }
         }
         break;
+        default:
+            break;
         }
     }
     break;
@@ -3870,8 +3872,8 @@ void RenderPartyHP()
 
         if (p->index <= -1) continue;
 
-        CHARACTER* c = &CharactersClient[p->index];
-        OBJECT* o = &c->Object;
+        const CHARACTER* c = &CharactersClient[p->index];
+        const OBJECT* o = &c->Object;
         vec3_t      Position;
         int         ScreenX, ScreenY;
 

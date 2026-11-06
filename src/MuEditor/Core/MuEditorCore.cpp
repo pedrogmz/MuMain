@@ -37,6 +37,7 @@
 #include "../MuEditor/UI/ItemTranslations/MuItemTranslationsUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterBrowserUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterAttacksUI.h"
+#include "../MuEditor/UI/MonsterTools/MuMonsterSoundsUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterModelUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterPreviewUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterTranslationsUI.h"
@@ -55,6 +56,9 @@
 #include "Core/Utilities/StringUtils.h"
 #include "World/MapInfra/MapManager.h"
 #include "Render/Renderer/MuRenderer.h"
+#include "UI/SoundEditor/MuSoundEditorUI.h"
+#include "UI/SoundEditor/SoundEditorEdits.h"
+#include "UI/SoundMixer/MuSoundMixerUI.h"
 
 namespace mu
 {
@@ -651,6 +655,10 @@ void CMuEditorCore::RenderMonsterTools()
     {
         g_MuMonsterAttacksUI.Render(&m_windows.monsterAttacks);
     }
+    if (m_windows.monsterSounds)
+    {
+        g_MuMonsterSoundsUI.Render(&m_windows.monsterSounds);
+    }
     if (m_windows.monsterTranslations)
     {
         g_MuMonsterTranslationsUI.Render(&m_windows.monsterTranslations);
@@ -937,6 +945,18 @@ void CMuEditorCore::Render()
         {
             g_MuDataChecksUI.Render(&m_windows.dataChecks);
         }
+        if (m_windows.soundMixer)
+        {
+            g_MuSoundMixerUI.Render(&m_windows.soundMixer);
+        }
+        // Also while the Sound Editor is closed: its folders keep the sounds
+        // whose keys the windows above changed (a set renamed in Monster
+        // Sounds, a file picked in the Map Editor's Sounds tab).
+        g_SoundEdits.FollowKeyChanges();
+        if (m_windows.soundEditor)
+        {
+            g_MuSoundEditorUI.Render(&m_windows.soundEditor);
+        }
 
         // Render console (if enabled)
         if (m_windows.console)
@@ -950,6 +970,11 @@ void CMuEditorCore::Render()
         // game doesn't stay stuck in an edit mode.
         g_MapEditorUI.Render(nullptr);
     }
+
+    // The Sound Mixer's overlay over the game, also while the editor is
+    // closed: its frame's sources are taken either way. After the Sound
+    // Mixer's window, so the row under the mouse this frame is marked.
+    g_MuSoundMixerUI.RenderOverlay();
 
     // After the game's move and draw, also while the editor is hidden: the
     // effect browser's world preview keeps what it created running.

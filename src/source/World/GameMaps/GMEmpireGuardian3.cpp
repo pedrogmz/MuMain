@@ -430,7 +430,7 @@ bool GMEmpireGuardian3::MoveMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
         {
             if (o->AnimationFrame >= 3.8f && o->AnimationFrame <= 9.4f)
             {
-                RenderSkillEarthQuake(c, o, b, 14);
+                SpawnSkillEarthQuake(c, o, b, 14);
             }
             else
             {
@@ -1111,7 +1111,7 @@ bool GMEmpireGuardian3::UpdateMonsterEffects(CHARACTER* c, OBJECT* o, BMD* b)
     return false;
 }
 
-bool GMEmpireGuardian3::RenderMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
+bool GMEmpireGuardian3::RenderMonsterVisual(const CHARACTER* c, const OBJECT* o, BMD* b)
 {
     if (o->Type == MODEL_DUAL_BERSERKER)
     {
@@ -1195,6 +1195,8 @@ bool GMEmpireGuardian3::SetCurrentActionMonster(CHARACTER* c, OBJECT* o)
             m_bCurrentIsRage_Kato = true;
         return GameLogic::Monsters::Attacks::Play(*c, *o);
     }
+    default:
+        break;
     }
     return false;
 }

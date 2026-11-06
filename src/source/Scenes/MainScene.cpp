@@ -4,6 +4,8 @@
 
 #include "stdafx.h"
 #include "App/Control/ControlTaps.h"
+#include "Audio/SoundOverlay.h"
+#include "Audio/SoundSource.h"
 #include "Engine/Object/EditObjects.h"
 #include "UI/Chat/Chat.h"
 #include "MainScene.h"
@@ -44,6 +46,11 @@
 #include "Camera/CameraManager.h"
 #include "Camera/CameraMode.h"
 #include "Core/Input/ImeInput.h"
+#include "Render/Drawing/DeferredDraws.h"
+#include "Render/Drawing/DrawCallLog.h"
+#include "Render/Drawing/LegacyCalls.h"
+
+#include <optional>
 #ifdef _EDITOR
 #include "Camera/FrustumRenderer.h"
 #include "Camera/CameraDebugLog.h"
@@ -242,8 +249,12 @@ static void UpdateUIAndInput()
     if (g_pMainFrame != nullptr && g_pMainFrame->IsMouseOverHud())
         MouseOnWindow = true;
 
-    g_pPartyManager->Update();
-    g_pNewUISystem->Update();
+    {
+        // The windows' sounds are the interface's (Q-SM13).
+        const Audio::ScopedSoundPlace ui(Audio::SoundKind::Interface, -1, nullptr);
+        g_pPartyManager->Update();
+        g_pNewUISystem->Update();
+    }
 
     if (MouseLButton == true &&
         false == g_pNewUISystem->CheckMouseUse() &&
@@ -263,7 +274,10 @@ static void UpdateUIAndInput()
     MoveBattleSoccerGoalEffect();
 
     if (ErrorMessage != MESSAGE_LOG_OUT)
+    {
+        const Audio::ScopedSoundPlace ui(Audio::SoundKind::Interface, -1, nullptr);
         g_pUIManager->UpdateInput();
+    }
 }
 
 /**
@@ -325,7 +339,9 @@ static void UpdateGameEntities()
         UpdateMountEffects();
         UpdateEffectModelEffects();
         UpdateTerrainEffects();
+        UpdateTerrainWaterSpots();
     }
+    MoveWaterTerrain();
 
     g_Direction.CheckDirection();
 
@@ -438,6 +454,9 @@ static void SetupMainSceneViewport(int& outWidth, int& outHeight, BYTE& outByWat
     }
     Scenes::Lighting::SubmitSceneLighting();
     App::Control::Frames::RecordWorldCamera();
+#ifdef _EDITOR
+    Audio::Overlay::KeepCamera(g_Camera);
+#endif
 }
 
 // Diagnostic toggle -- see MainScene.h's SetDisableEffects() doc comment.
@@ -549,7 +568,7 @@ bool IsWingExtraLayersDisabledDebug()
  * @param width Screen width for water terrain rendering
  * @param height Screen height for water terrain rendering
  */
-static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
+static void RenderGameWorldPass(BYTE& byWaterMap, int width, int height)
 {
 #ifdef _EDITOR
     // DevEditor render toggle checks
@@ -565,6 +584,10 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
     bool renderDroppedItems = true;
     bool renderWeatherEffects = true;
 #endif
+    // Described first and drawn at the end of the pass when the developer switch is on.
+    std::optional<Render::Drawing::DeferredDraws> later;
+    if (Render::Drawing::DrawsWorldLater())
+        later.emplace();
 
     if (IsWaterTerrain() == false && renderTerrain)
     {
@@ -580,7 +603,7 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
                 {
                     FRAME_PROFILE(Objects);
                     Render::Lighting::LightSourceScope mapLights(Render::Lighting::LightSource::Map);
-                    mu::ScopedReorderableDraws reorderable;
+                    Render::Drawing::ScopedReorderableDraws reorderable;
                     RenderObjects();
                 }
                 { FRAME_PROFILE(Terrain); RenderTerrain(false); }
@@ -591,7 +614,7 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
     {
         FRAME_PROFILE(Objects);
         Render::Lighting::LightSourceScope mapLights(Render::Lighting::LightSource::Map);
-        mu::ScopedReorderableDraws reorderable;
+        Render::Drawing::ScopedReorderableDraws reorderable;
         RenderObjects();
     }
 
@@ -625,7 +648,7 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
     if (renderStatic)
     {
         FRAME_PROFILE(Objects);
-        mu::ScopedReorderableDraws reorderable;
+        Render::Drawing::ScopedReorderableDraws reorderable;
         RenderObjects_AfterCharacter();
     }
 
@@ -637,7 +660,6 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
         RenderEffects();
         RenderBlurs();
     }
-    CheckSprites();
     BeginSprite();
 
     if (ShouldRenderLeaves())
@@ -656,6 +678,8 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
     EndSprite();
 
     RenderAfterEffects();
+    if (later)
+        later->Flush();
 
     if (IsWaterTerrain() == true)
     {
@@ -663,10 +687,13 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
 
         EndOpengl();
         BeginOpenglPhysical(0, 0, width, height);
+        // The water pass changes the camera: a segment of its own.
+        std::optional<Render::Drawing::DeferredDraws> waterLater;
+        if (Render::Drawing::DrawsWorldLater())
+            waterLater.emplace();
         RenderWaterTerrain();
         { FRAME_PROFILE(Joints); RenderJoints(byWaterMap); }
         { FRAME_PROFILE(Effects); RenderEffects(true); RenderBlurs(); }
-        CheckSprites();
         BeginSprite();
 
         if (gMapManager.WorldActive == WD_2DEVIAS && HeroTile != 3 && HeroTile < 10)
@@ -677,6 +704,8 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
         RenderPoints(byWaterMap);
 
         EndSprite();
+        if (waterLater)
+            waterLater->Flush();
         EndOpengl();
 
         BeginOpenglPhysical(0, 0, width, height);
@@ -689,6 +718,38 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
             battleCastle::EndFog();
         }
     }
+}
+
+// Draws the world pass, after drawing it at once and later into two logs when "drawparity" asked for it. The logs
+// stand in for the renderer, so the frame shows the pass once.
+static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
+{
+    bool secondLater = true;
+    if (Render::Drawing::TakeDrawParityRequest(secondLater))
+    {
+        const bool drawsLater = Render::Drawing::DrawsWorldLater();
+        // Each run starts from the sprites the frame drew so far, as the frame's own pass does.
+        const SpriteDrawFlags spritesDrawn = SpritesDrawnThisFrame();
+        Render::Drawing::DrawCallLog atOnce;
+        Render::Drawing::DrawCallLog later;
+        for (Render::Drawing::DrawCallLog* log : {&atOnce, &later})
+        {
+            Render::Drawing::SetDrawsWorldLater(secondLater && log == &later);
+            mu::SetRendererOverride(log);
+            Render::Drawing::ResetLegacyState();
+            SetSpritesDrawnThisFrame(spritesDrawn);
+            BYTE waterMap = byWaterMap;
+            RenderGameWorldPass(waterMap, width, height);
+            log->NoteFinalState();
+            mu::SetRendererOverride(nullptr);
+        }
+        Render::Drawing::SetDrawsWorldLater(drawsLater);
+        // The legacy calls' caches followed the logs: tell the renderer again.
+        Render::Drawing::ResetLegacyState();
+        SetSpritesDrawnThisFrame(spritesDrawn);
+        Render::Drawing::ReportDrawParity(atOnce.calls, later.calls);
+    }
+    RenderGameWorldPass(byWaterMap, width, height);
 }
 
 /**
@@ -707,8 +768,12 @@ static void RenderMainSceneUI()
     }
     EndBitmap();
 
-    g_pPartyManager->Render();
-    g_pNewUISystem->Render();
+    {
+        // The windows' sounds are the interface's (Q-SM13).
+        const Audio::ScopedSoundPlace ui(Audio::SoundKind::Interface, -1, nullptr);
+        g_pPartyManager->Render();
+        g_pNewUISystem->Render();
+    }
 
     BeginBitmap();
     RenderInfomation();

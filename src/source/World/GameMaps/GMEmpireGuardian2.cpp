@@ -286,7 +286,7 @@ bool GMEmpireGuardian2::MoveMonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
         {
             if (o->AnimationFrame >= 5.4f && o->AnimationFrame <= 11.0f)
             {
-                RenderSkillEarthQuake(c, o, b, 14);
+                SpawnSkillEarthQuake(c, o, b, 14);
             }
 
             if (6.0f <= o->AnimationFrame && o->AnimationFrame < 10.0f)
@@ -1050,6 +1050,8 @@ bool GMEmpireGuardian2::SetCurrentActionMonster(CHARACTER* c, OBJECT* o)
             m_bCurrentIsRage_Bermont = true;
         return GameLogic::Monsters::Attacks::Play(*c, *o);
     }
+    default:
+        break;
     }
     return false;
 }
@@ -1097,6 +1099,8 @@ bool GMEmpireGuardian2::AttackEffectMonster(CHARACTER* c, OBJECT* o, BMD* b)
         }
     }
         return true;
+    default:
+        break;
     }
     return false;
 }

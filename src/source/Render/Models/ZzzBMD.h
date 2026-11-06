@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include "Render/Sprites/TextureScript.h"
@@ -14,6 +15,7 @@ namespace Render::ModelDrawing
 struct MeshDraw;
 struct ModelSkin;
 struct ShadowDraw;
+struct ClothShadow;
 } // namespace Render::ModelDrawing
 
 struct BITMAP_t;
@@ -50,13 +52,13 @@ void SetActiveBoneTransform(const float (*ptr)[3][4]);
 #define RENDER_CHROME6      0x00010000
 #define RENDER_CHROME7      0x00020000
 #define RENDER_DOPPELGANGER 0x00040000
+// Drawn on the faces turned away from the camera too.
+#define RENDER_TWOSIDED 0x00080000
 #define RENDER_WAVE_EXT		0x10000000
 #define RENDER_BYSCRIPT		0x80000000
 #define RNDEXT_WAVE			1
 #define RNDEXT_OIL          2
 #define RNDEXT_RISE			4
-
-#define MAX_MONSTER_SOUND   10
 
 typedef struct
 {
@@ -224,7 +226,6 @@ public:
     unsigned short PriorAction;
     float         CurrentAnimation;
     short         CurrentAnimationFrame;
-    short         Sounds[MAX_MONSTER_SOUND];
     int           renderCount;
     float		  fTransformedSize;
 
@@ -354,6 +355,9 @@ public:
     // are read as the same ambient globals/members Transform() itself reads.
     void SkinVertex(int mesh, int vertexIndex, float (*BoneMatrix)[3][4], bool Translate, float _Scale,
                     vec3_t out) const;
+    // The same, from a draw's skin and where its body stands instead of the model's last Transform.
+    void SkinVertex(int mesh, int vertexIndex, const Render::ModelDrawing::ModelSkin& skin, float bodyScale,
+                    const float bodyOrigin[3], vec3_t out) const;
     // Batch form: skins every vertex of `mesh` into the corresponding slice of the global
     // VertexTransform[mesh] array -- the same side effect Transform()'s loop has for that one mesh,
     // without touching any other mesh or computing normals/lighting.
@@ -409,7 +413,7 @@ public:
     void BeginRender(float) const;
     void EndRender() const;
 
-    void RenderMeshEffect(int i, int iType, int iSubType = 0, vec3_t Angle = 0, VOID* obj = NULL);
+    void SpawnMeshEffects(int i, int iType, int iSubType = 0, vec3_t Angle = 0, VOID* obj = NULL);
 
     void RenderMesh(int meshIndex, int renderFlags, float alpha = 1.f, int blendMeshIndex = -1, float blendMeshAlpha = 1.f, float blendMeshTextureCoordU = 0.f, float blendMeshTextureCoordV = 0.f, int textureIndex = -1);
     // The skinning the last Transform() set up, as RenderMesh and RenderBodyShadow put it in their draws.
@@ -421,19 +425,31 @@ public:
                                     BITMAP_t*& texture) const;
     // Whether a draw is a faded bright or chrome pass that dims the model's light, for it and the meshes after it.
     [[nodiscard]] bool DimsLight(const Render::ModelDrawing::MeshDraw& draw) const;
+    // Whether DrawMesh draws the mesh with vertices skinned on the CPU (not on the GPU, and not nothing);
+    // readsNormals gets whether it reads their normals too (for its light, chrome or wave).
+    [[nodiscard]] bool DrawsOnCpu(const Render::ModelDrawing::MeshDraw& draw, bool& readsNormals) const;
     void BeginRenderCoinHeap();
     int AddToCoinHeap(int coinIndex, int target_vertex_index);
     void EndRenderCoinHeap(int coinCount);
 
     void RenderBody(int RenderFlag, float Alpha = 1.f, int BlendMesh = -1, float BlendMeshLight = 1.f, float BlendMeshTexCoordU = 0.f, float BlendMeshTexCoordV = 0.f, int HiddenMesh = -1, int Texture = -1);
+    // RenderBody's rules for one mesh, for looks that draw the meshes one by one. Hidden: by its texture script
+    // (_H) or as `hiddenMesh`.
+    [[nodiscard]] bool IsMeshHidden(int mesh, int hiddenMesh) const;
+    // Glowing: by its texture script (_R), or as `blendMesh`.
+    [[nodiscard]] bool IsMeshGlowing(int mesh, int blendMesh) const;
+    // Draws one mesh as RenderBody does: a mesh that glows by its texture script blends itself, and a shadow
+    // script (_DC, _DT) adds its shadow pass.
+    void RenderScriptedMesh(int mesh, int renderFlag, float alpha, int blendMesh, float blendMeshLight,
+                            float blendMeshTexCoordU, float blendMeshTexCoordV, int texture = -1);
     void RenderBodyShadow(int blendMesh = -1, int hiddenMesh = -1, int startMeshNumber = -1,
         int endMeshNumber = -1, void* pClothes = nullptr, int clothesCount = 0, float alpha = 1.f);
     // Moves a skinned position onto the ground for the planar shadow (with `context`).
     using ShadowProjection = void (*)(float position[3], const void* context);
     // The planar shadow of model file mesh `mesh` (BMD::GltfModel) at the LOD
     // of `draw` (the LODs share the skin), placed by `draw`:
-    // `vertices` gets its vertices, each skinned once (LOD 0: the
-    // VertexTransform of EnsureCpuVertices; a coarser LOD: its own vertices with
+    // `vertices` gets its vertices, each skinned once (LOD 0: those of
+    // ShadowVertices; a coarser LOD: its own vertices with
     // the same arithmetic) and projected once; `indices` its triangles' corners
     // in triangle order, as indices into `vertices`. Both are replaced; both
     // empty for a mesh the LOD does not draw. With a pure `project` the corners
@@ -479,10 +495,18 @@ private:
     // The shadow streams the renderer keeps for the meshes of this slot.
     void ReleaseShadowStreams();
 
-    void AddClothesShadowTriangles(void* pClothes, int clothesCount, const float* origin, float sx, float sy,
-                                   std::uint32_t color) const;
-    void AddMeshShadowTriangles(int blendMesh, int hiddenMesh, int startMesh, int endMesh, const float* origin,
-                                float sx, float sy, std::uint32_t color) const;
+    void AddClothesShadowTriangles(std::span<const Render::ModelDrawing::ClothShadow> clothes, const float* origin,
+                                   float sx, float sy, std::uint32_t color) const;
+    // Whether VertexTransform[mesh] holds this model's vertices now: skinned on the CPU, or written by the cloth.
+    [[nodiscard]] bool OwnsCpuVertices(int mesh) const;
+    // Whether a shadow casts a mesh's own CPU vertices instead of skinning it on the GPU.
+    [[nodiscard]] bool ShadowOwnsVertices(const Render::ModelDrawing::ShadowDraw& draw, int mesh) const;
+    // The vertices a shadow casts for a mesh: as taken for the draw, else the model's own CPU vertices, else the
+    // mesh skinned from the draw's skin without writing the scratch (valid until the next call).
+    [[nodiscard]] const vec3_t* ShadowVertices(const Render::ModelDrawing::ShadowDraw& draw, int mesh) const;
+    void AddMeshShadowTriangles(const Render::ModelDrawing::ShadowDraw& draw, int blendMesh, int hiddenMesh,
+                                int startMesh, int endMesh, const float* origin, float sx, float sy,
+                                std::uint32_t color) const;
     // The same shadow from a cached rest-pose stream skinned on the GPU; false leaves it to the CPU.
     [[nodiscard]] bool RenderGpuMeshShadow(const Render::ModelDrawing::ShadowDraw& draw, int startMesh, int endMesh,
                                            float sx, float sy, std::uint32_t color) const;

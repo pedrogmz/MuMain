@@ -6,7 +6,9 @@
 #include "Data/GameData/ItemData/ItemDataIssue.h"
 #include "Data/GameData/MonsterData/MonsterDefinition.h"
 #include "Data/GameData/MonsterData/MonsterModelDefinition.h"
+#include "Data/GameData/MonsterData/MonsterSoundSet.h"
 
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
@@ -34,6 +36,16 @@ struct MonsterModelSnapshot
 
     bool operator==(const MonsterModelSnapshot&) const = default;
 };
+
+// A sound set as the monster editor's undo keeps it: the set of the name, or
+// nullopt for none.
+struct MonsterSoundSetSnapshot
+{
+    std::string name;
+    std::optional<MonsterSoundSet> set;
+
+    bool operator==(const MonsterSoundSetSnapshot&) const = default;
+};
 #endif
 
 // Loads the monster list (Data/Monsters/Monsters.json) into the monster table
@@ -59,6 +71,13 @@ public:
     // types it names. Like Load, it logs the problems; on fatal problems the table
     // stays as it was and `errorMessage` describes them.
     bool LoadModels(std::string& errorMessage);
+
+    // Reads the sound sets (Data/Monsters/Sounds.json) into the set table
+    // (g_MonsterSoundSetDatabase), after the monsters and the models: it logs
+    // the problems of the file and what the three name of each other
+    // (ValidateMonsterSoundLinks). On fatal problems the table stays as it was
+    // and `errorMessage` describes them.
+    bool LoadSounds(std::string& errorMessage);
 
     void SetNamesChangedCallback(NamesChangedCallback callback)
     {
@@ -86,7 +105,8 @@ public:
     // problems to `issues`.
     void Validate(std::vector<Items::ItemDataIssue>& issues) const;
     // The checks of LoadModels on the model table as it is: the names it
-    // holds (sound ids and slots, bitmap and part slots, part effects) and
+    // holds (bitmap and part slots, part effects; the sounds are the sets',
+    // ValidateSounds) and
     // the model and part files that are not in the client folder, as
     // problems of the model list file. Appends them to `issues`.
     void ValidateModels(std::vector<Items::ItemDataIssue>& issues) const;
@@ -119,12 +139,40 @@ public:
     // problems found are added to `issues`.
     bool RevertModels(std::vector<Items::ItemDataIssue>& issues);
 
-    // Save and SaveModels together: neither file is written when the checks
-    // of one find errors.
+    // The monster editor's reads and changes of the sound sets (Q-MN78). The
+    // sounds of a changed set, and of a set a changed monster names, are
+    // loaded for the open models that use them by ReopenChangedModels.
+
+    // The set of the name as it is now; nullopt when there is none.
+    std::optional<MonsterSoundSet> ReadSoundSet(const std::string& name) const;
+    // Makes each name what its snapshot says, exactly: the set, or no set for
+    // nullopt.
+    void RestoreSoundSets(std::span<const MonsterSoundSetSnapshot> snapshots);
+    // The checks of LoadSounds on the tables as they are: the names in the
+    // sets, and what the monsters, models and sets name of each other.
+    // Appends the problems to `issues`.
+    void ValidateSounds(std::vector<Items::ItemDataIssue>& issues) const;
+
+    // The monster list, the model list and the sound sets together: no file
+    // is written when the checks of one find errors.
     bool SaveAll(std::vector<Items::ItemDataIssue>& issues);
-    // Revert and RevertModels together: neither table changes when one file
+    // The sound sets file as it is, its sets changed by `change` (the Sound
+    // Editor's Save, which writes what that window changed): the monster and
+    // model lists and the rest of the file stay as written, so the monster
+    // tools' unsaved changes stay theirs. False, with nothing written, when
+    // the file cannot be read, `change` returns false or the sets would not
+    // read back; the problems are added to `issues`.
+    bool SaveSoundSets(const std::function<bool(std::vector<MonsterSoundSet>& sets)>& change,
+                       std::vector<Items::ItemDataIssue>& issues);
+    // The three files read again together: no table changes when one file
     // has fatal problems.
     bool RevertAll(std::vector<Items::ItemDataIssue>& issues);
+    // How often SaveAll or RevertAll made the tables and the three files
+    // alike: the Sound Editor then takes the sets' names as the file's.
+    int GetFilesVersion() const
+    {
+        return m_filesVersion;
+    }
 
     // Told after ReopenChangedModels with the slots it opened again; the
     // game clamps the animations of the characters that use them.
@@ -135,12 +183,12 @@ public:
     }
     bool HasModelsToReopen() const
     {
-        return !m_modelsToReopen.empty() || !m_modelsToOpen.empty();
+        return !m_modelsToReopen.empty() || !m_modelsToOpen.empty() || m_soundsToLoad;
     }
     // Opens the changed models that the game has open again (ModelLoader::
     // Reopen): the file, its textures from the folders of the loaded map,
     // the parts, the speeds and the sounds. Also opens the models the tools
-    // asked for.
+    // asked for, and loads the sounds of changed sets for the open models.
     void ReopenChangedModels();
     // Opens the slot's model with ReopenChangedModels when the game does not
     // have it open, for the monster tools, which show the animations of an
@@ -157,6 +205,7 @@ private:
     // in the language shown, the models with the changed slots to reopen.
     void UseMonsters(std::span<const MonsterDefinition> monsters);
     void UseModels(std::span<const MonsterModelDefinition> models);
+    void UseSoundSets(std::span<const MonsterSoundSet> sets);
 #endif
 
     NamesChangedCallback m_namesChanged = nullptr;
@@ -165,6 +214,10 @@ private:
     ModelsReopenedCallback m_modelsReopened = nullptr;
     std::vector<int> m_modelsToReopen;
     std::vector<int> m_modelsToOpen;
+    // A set or a monster's set changed: the open models load their sets'
+    // sounds again.
+    bool m_soundsToLoad = false;
+    int m_filesVersion = 0;
 #endif
 };
 } // namespace Data::Monsters

@@ -1,6 +1,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "Data/DataHandler/DataFileIO.h"
+#include "Core/Utilities/FileHandle.h"
 #include "Core/Utilities/Random.h"
 #include "Camera/CameraMove.h"
 #include "Render/Textures/ZzzOpenglUtil.h"
@@ -27,15 +29,18 @@
 #include "Scenes/SceneCore.h"
 #include "Engine/Object/ZzzOpenData.h"
 #include "Audio/DSPlaySound.h"
+#include "Audio/SoundSource.h"
 #include "Camera/ICamera.h"
 
 #include "Render/Models/SideHair.h"
 #include "Engine/Physics/PhysicsManager.h"
 #include "Engine/AI/GOBoid.h"
+#include "GameLogic/Pets/w_PetProcess.h"
 #include "Character/CSParts.h"
 #include "GameLogic/Items/CSItemOption.h"
 #include "GameLogic/Events/CSChaosCastle.h"
 #include "World/MapInfra/MapManager.h"
+#include "World/MapInfra/MapObjectSounds.h"
 #include "UI/Core/UIManager.h"
 #include "GameLogic/Events/Cinematic/CDirection.h"
 #include "GameLogic/Items/CComGem.h"
@@ -303,25 +308,26 @@ static float (*DrawPose(const OBJECT* o, BMD* b, bool Translate, const ObjectGho
     return bones;
 }
 
-static void AnimateObjectBones(OBJECT* o, BMD* b, bool Translate)
+namespace
 {
-    if (!o->EnableBoneMatrix)
-    {
-        b->Animation(BoneTransform, o->AnimationFrame, o->PriorAnimationFrame, o->PriorAction, o->Angle, o->HeadAngle,
-                     false, !Translate);
-        return;
-    }
-    const bool world = !Translate;
-    const bool reused = Engine::Object::Pose::IsCurrent(o, b, world);
-    if (!reused)
-    {
-        b->Animation(o->BoneTransform, o->AnimationFrame, o->PriorAnimationFrame, o->PriorAction, o->Angle,
-                     o->HeadAngle, false, world);
-        Engine::Object::Pose::Record(o, b, world);
-    }
-#ifdef MU_ENABLE_CONTROL_SOCKET
-    CheckCharacterPose(o, b, reused);
-#endif
+// The draw bones of the objects posed by this frame's draws; cleared when the frame's object draws begin.
+std::unordered_map<const OBJECT*, vec34_t*> s_drawnPoses;
+} // namespace
+
+vec34_t* DrawnPose(const OBJECT* o)
+{
+    const auto it = s_drawnPoses.find(o);
+    return it != s_drawnPoses.end() ? it->second : o->BoneTransform;
+}
+
+static void AnimateObjectBones(const OBJECT* o, BMD* b, bool Translate)
+{
+    vec34_t* bones = DrawPose(o, b, Translate, nullptr);
+    // A later draw of the object in the frame (after a ghost's) may be back on its own pose.
+    if (o->EnableBoneMatrix && bones != o->BoneTransform)
+        s_drawnPoses[o] = bones;
+    else
+        s_drawnPoses.erase(o);
 }
 
 void ObjectModelOrigin(const OBJECT* o, vec3_t origin)
@@ -454,7 +460,7 @@ bool Calc_RenderObject(const OBJECT* o, bool Translate, int Select, int ExtraMon
     return true;
 }
 
-bool Calc_ObjectAnimation(OBJECT* o, bool Translate, int Select)
+bool Calc_ObjectAnimation(const OBJECT* o, bool Translate, int Select)
 {
     if (o->Alpha < 0.01f) return false;
 
@@ -467,23 +473,6 @@ bool Calc_ObjectAnimation(OBJECT* o, bool Translate, int Select)
     VectorCopy(o->Position, b->BodyOrigin);
 
     AnimateObjectBones(o, b, Translate);
-    return true;
-}
-
-bool Calc_ObjectAnimationInto(OBJECT* o, bool Translate, vec34_t* bones)
-{
-    if (o->Alpha < 0.01f)
-        return false;
-
-    BMD* b = &Models[o->Type];
-    b->BodyHeight = 0.f;
-    b->ContrastEnable = o->ContrastEnable;
-    BodyLight(o, b);
-    b->BodyScale = o->Scale;
-    b->CurrentAction = o->CurrentAction;
-    VectorCopy(o->Position, b->BodyOrigin);
-    b->Animation(bones, o->AnimationFrame, o->PriorAnimationFrame, o->PriorAction, o->Angle, o->HeadAngle, false,
-                 !Translate);
     return true;
 }
 
@@ -562,9 +551,9 @@ void Draw_RenderObject(const OBJECT* o, bool Translate, int Select, int ExtraMon
 
             for (int i = 0; i < MAX_CHARACTERS_CLIENT; ++i)
             {
-                CHARACTER* c = &CharactersClient[i];
-                OBJECT* oa = &c->Object;
-                OBJECT* ob = o->Owner;
+                const CHARACTER* c = &CharactersClient[i];
+                const OBJECT* oa = &c->Object;
+                const OBJECT* ob = o->Owner;
 
                 if (oa == ob)
                 {
@@ -2617,7 +2606,7 @@ void UpdateRenderObjectEffects(OBJECT* o)
 
             PlayBuffer(SOUND_HIT_GATE2);
             SkinObjectMeshes(o, b, true);
-            b->RenderMeshEffect(0, MODEL_STONE_COFFIN);
+            b->SpawnMeshEffects(0, MODEL_STONE_COFFIN);
         }
         break;
     case MODEL_CASTLE_GATE:
@@ -2627,7 +2616,7 @@ void UpdateRenderObjectEffects(OBJECT* o)
 
             PlayBuffer(SOUND_HIT_GATE2);
             SkinObjectMeshes(o, b, true);
-            b->RenderMeshEffect(0, MODEL_GATE);
+            b->SpawnMeshEffects(0, MODEL_GATE);
         }
         break;
     case MODEL_FLY_BIG_STONE1:
@@ -2636,7 +2625,7 @@ void UpdateRenderObjectEffects(OBJECT* o)
         {
             o->HiddenMesh = -2;
             SkinObjectMeshes(o, b, false);
-            b->RenderMeshEffect(0, o->Type == MODEL_FLY_BIG_STONE1 ? MODEL_BIG_STONE_PART1 : MODEL_BIG_STONE_PART2);
+            b->SpawnMeshEffects(0, o->Type == MODEL_FLY_BIG_STONE1 ? MODEL_BIG_STONE_PART1 : MODEL_BIG_STONE_PART2);
         }
         break;
     case MODEL_VALKYRIE:
@@ -3348,12 +3337,12 @@ float ModelScreenHeight(const Render::Models::Gltf::SkinnedModel& model, const O
 }
 
 // The LOD each object's model file was drawn with, this frame and the last: the draw's hysteresis history.
-std::unordered_map<const OBJECT*, unsigned char> s_drawnLods;
-std::unordered_map<const OBJECT*, unsigned char> s_lastFrameLods;
+std::unordered_map<const void*, unsigned char> s_drawnLods;
+std::unordered_map<const void*, unsigned char> s_lastFrameLods;
 
-int DrawnLod(const std::unordered_map<const OBJECT*, unsigned char>& lods, const OBJECT& o)
+int DrawnLod(const std::unordered_map<const void*, unsigned char>& lods, const OBJECT& o)
 {
-    const auto it = lods.find(&o);
+    const auto it = lods.find(Random::DrawKey(&o));
     return it != lods.end() ? it->second : 0;
 }
 
@@ -3372,7 +3361,7 @@ public:
         }
         const int lod = Render::Models::SelectLod(ModelScreenHeight(*skinned, o), DrawnLod(s_lastFrameLods, o),
                                                   skinned->lodSettings, skinned->LodCount());
-        s_drawnLods[&o] = static_cast<unsigned char>(lod);
+        s_drawnLods[Random::DrawKey(&o)] = static_cast<unsigned char>(lod);
         model_.ActiveLod = lod;
     }
     ~ModelLodScope()
@@ -3445,56 +3434,39 @@ void RenderObject_AfterImage(const OBJECT* o, bool Translate, int Select, int Ex
     RenderObject(o, Translate, Select, 0);
 }
 
-void RenderCharacter_AfterImage(CHARACTER* pCha, PART_t* pPart, bool Translate, int Select, float AniInterval1, float AniInterval2)
+void RenderCharacter_AfterImage(const CHARACTER* pCha, const PART_t* pPart, vec3_t light, bool Translate, int Select,
+                                float AniInterval1, float AniInterval2)
 {
-    OBJECT* pObj = &pCha->Object;
-    float fAnimationFrame = pObj->AnimationFrame;
-    // The ghosts borrow the character's alpha; the part itself is drawn at, and keeps, the alpha it came with.
-    const float alpha = pObj->Alpha;
-    float fAni1, fAni2;
-    int Type = pPart->Type;
-
-    fAni1 = (float)(fAnimationFrame - AniInterval1);
-    fAni2 = (float)(fAnimationFrame - AniInterval2);
-
-    vec3_t vPos, vStartPos, vOrgPos;
-    VectorCopy(pObj->Position, vOrgPos);
-    VectorCopy(pObj->Position, vPos);
-    VectorCopy(pObj->StartPosition, vStartPos);
-    VectorSubtract(vPos, vStartPos, vPos);
-    float fDis = fAni1 / Models[pObj->Type].Actions[pObj->CurrentAction].NumAnimationKeys;
-
-    if (fAni1 > 0.0f)
+    const OBJECT* pObj = &pCha->Object;
+    const int Type = pPart->Type;
+    const float keys = Models[pObj->Type].Actions[pObj->CurrentAction].NumAnimationKeys;
+    // Two ghosts on the way from where the move started, at earlier frames and fainter, drawn from a copy of the
+    // character; then the part as it stands.
+    struct Ghost
     {
-        pObj->Alpha = 0.3f;
-        pObj->AnimationFrame = fAni1;
-        VectorScale(vPos, fDis, vPos);
-        VectorAdd(vStartPos, vPos, vPos);
-        VectorCopy(vPos, pObj->Position);
-        Calc_ObjectAnimation(pObj, Translate, Select);
-        RenderPartObject(pObj, Type, pPart, pCha->Light, pObj->Alpha, pPart->Level, pPart->ExcellentFlags, pPart->AncientDiscriminator, false, false, Translate, Select);
-    }
-
-    VectorCopy(vOrgPos, vPos);
-    VectorCopy(pObj->StartPosition, vStartPos);
-    VectorSubtract(vPos, vStartPos, vPos);
-    if (fAni2 > 0.0f)
+        float alpha;
+        float interval;
+    };
+    const Ghost ghosts[] = {{0.3f, AniInterval1}, {0.5f, AniInterval2}};
+    OBJECT ghost = *pObj;
+    const Random::DrawnAs drawnAs(&ghost, pObj);
+    for (const Ghost& g : ghosts)
     {
-        fDis = fAni2 / Models[pObj->Type].Actions[pObj->CurrentAction].NumAnimationKeys;
-        pObj->Alpha = 0.5f;
-        pObj->AnimationFrame = fAni2;
-        VectorScale(vPos, fDis, vPos);
-        VectorAdd(vStartPos, vPos, vPos);
-        VectorCopy(vPos, pObj->Position);
-        Calc_ObjectAnimation(pObj, Translate, Select);
-        RenderPartObject(pObj, Type, pPart, pCha->Light, pObj->Alpha, pPart->Level, pPart->ExcellentFlags, pPart->AncientDiscriminator, false, false, Translate, Select);
+        const float frame = pObj->AnimationFrame - g.interval;
+        if (frame <= 0.0f)
+            continue;
+        vec3_t travel;
+        VectorSubtract(pObj->Position, pObj->StartPosition, travel);
+        VectorScale(travel, frame / keys, travel);
+        VectorAdd(pObj->StartPosition, travel, ghost.Position);
+        ghost.Alpha = g.alpha;
+        ghost.AnimationFrame = frame;
+        Calc_ObjectAnimation(&ghost, Translate, Select);
+        RenderPartObject(&ghost, Type, pPart, light, ghost.Alpha, pPart->Level, pPart->ExcellentFlags,
+                         pPart->AncientDiscriminator, false, false, Translate, Select);
     }
-
-    VectorCopy(vOrgPos, pObj->Position);
-    pObj->Alpha = alpha;
-    pObj->AnimationFrame = fAnimationFrame;
     Calc_ObjectAnimation(pObj, Translate, Select);
-    RenderPartObject(pObj, Type, pPart, pCha->Light, pObj->Alpha, pPart->Level, pPart->ExcellentFlags,
+    RenderPartObject(pObj, Type, pPart, light, pObj->Alpha, pPart->Level, pPart->ExcellentFlags,
                      pPart->AncientDiscriminator, false, false, Translate, Select);
 }
 
@@ -3577,6 +3549,11 @@ void RenderObjectVisual(const OBJECT* o)
 
 void UpdateObjectVisual(OBJECT* o)
 {
+    // The sounds its map's code plays meanwhile are marked here (Q-SM11).
+    const Audio::ScopedSoundPlace place(Audio::SoundKind::MapObject, o->Type, o->Position);
+    // The sound of its type, while it is drawn (Data/Maps/ObjectSounds.json).
+    World::MapObjectSounds::OnObjectDrawn(*o);
+
     BMD* b = &Models[o->Type];
     const auto bones = [o, b] { return Engine::Object::Pose::World(o, b); };
     vec3_t p, Position;
@@ -4143,6 +4120,8 @@ void UpdateObjectEffects()
             UpdateObjectVisual(o);
         }
     }
+    // The sounds of the objects drawn, each at its nearest object's level.
+    World::MapObjectSounds::PlayDrawnSounds();
 }
 
 #ifdef _EDITOR
@@ -4362,7 +4341,7 @@ void RenderObjects()
     g_ObjectThumbnail.ProcessPendingRequests();
 #endif
 
-    for (OBJECT* o : s_objectsToDraw)
+    for (const OBJECT* o : s_objectsToDraw)
     {
         RenderObject(o);
         RenderObjectVisual(o);
@@ -4373,7 +4352,7 @@ void RenderObjects()
     {
         if (!ob.Visible && !g_Camera.TopViewEnable)
             continue;
-        for (OBJECT* o = ob.Head; o != nullptr; o = o->Next)
+        for (const OBJECT* o = ob.Head; o != nullptr; o = o->Next)
         {
             if (!o->Live)
                 continue;
@@ -4419,7 +4398,7 @@ void RenderObjects()
 #endif
 }
 
-void RenderObject_AfterCharacter(OBJECT* o, bool Translate, int Select, int ExtraMon)
+void RenderObject_AfterCharacter(const OBJECT* o, bool Translate, int Select, int ExtraMon)
 {
     if (Calc_RenderObject(o, Translate, Select, ExtraMon) == false)
     {
@@ -4450,24 +4429,48 @@ void Draw_RenderObject_AfterCharacter(const OBJECT* o, bool Translate, int Selec
 namespace
 {
 // Draw-side bookkeeping for one frame, not object state.
-std::unordered_set<const OBJECT*> s_sentAfterCharacter;
+std::unordered_set<const void*> s_sentAfterCharacter;
 } // namespace
+
+namespace
+{
+bool s_shadowPass = false;
+int s_shadowHiddenMesh = ShadowPass::ObjectHiddenMesh;
+} // namespace
+
+ShadowPass::ShadowPass(int hiddenMesh) : previous_(s_shadowPass), previousHiddenMesh_(s_shadowHiddenMesh)
+{
+    s_shadowPass = true;
+    s_shadowHiddenMesh = hiddenMesh;
+}
+
+ShadowPass::~ShadowPass()
+{
+    s_shadowPass = previous_;
+    s_shadowHiddenMesh = previousHiddenMesh_;
+}
+
+bool DrawsShadow(const OBJECT* o)
+{
+    return o->EnableShadow || s_shadowPass;
+}
 
 void BeginObjectDraws()
 {
     s_sentAfterCharacter.clear();
+    s_drawnPoses.clear();
     s_lastFrameLods.swap(s_drawnLods);
     s_drawnLods.clear();
 }
 
 void SendAfterCharacter(const OBJECT* o)
 {
-    s_sentAfterCharacter.insert(o);
+    s_sentAfterCharacter.insert(Random::DrawKey(o));
 }
 
 bool IsSentAfterCharacter(const OBJECT* o)
 {
-    return s_sentAfterCharacter.contains(o);
+    return s_sentAfterCharacter.contains(Random::DrawKey(o));
 }
 
 void RenderObjects_AfterCharacter()
@@ -4503,7 +4506,7 @@ void RenderObjects_AfterCharacter()
 
             if (g_Direction.m_CKanturu.IsMayaScene())
             {
-                OBJECT* o = ob->Head;
+                const OBJECT* o = ob->Head;
 
                 while (1)
                 {
@@ -4530,7 +4533,7 @@ void RenderObjects_AfterCharacter()
                 || IsDoppelGanger2()
                 )
             {
-                OBJECT* o = ob->Head;
+                const OBJECT* o = ob->Head;
 
                 while (1)
                 {
@@ -4566,7 +4569,7 @@ void RenderObjects_AfterCharacter()
 
             if (ob->Visible || g_Camera.TopViewEnable)
             {
-                OBJECT* o = ob->Head;
+                const OBJECT* o = ob->Head;
                 while (1)
                 {
                     if (o != NULL)
@@ -4622,6 +4625,8 @@ int GetLoginCameraWalkCut();
 
 void MoveObject(OBJECT* o)
 {
+    // The sounds its map's code plays meanwhile are marked here (Q-SM11).
+    const Audio::ScopedSoundPlace place(Audio::SoundKind::MapObject, o->Type, o->Position);
     if (gMapManager.WorldActive == 9)
     {
         if ((int)WorldTime % 4000 < 1000)
@@ -5863,7 +5868,8 @@ void DeleteObjectTile(int x, int y)
             OBJECT* o = ob->Head;
             while (1)
             {
-                if (o != NULL && o != (OBJECT*)0xdddddddd)
+                // 0xdddddddd is the 32-bit MSVC debug heap's fill for freed memory.
+                if (o != NULL && o != reinterpret_cast<OBJECT*>(static_cast<std::uintptr_t>(0xdddddddd)))
                 {
                     if (o->Live && (int)(o->Position[0] / TERRAIN_SCALE) == x && (int)(o->Position[1] / TERRAIN_SCALE) == y)
                         DeleteObject(o, ob);
@@ -5878,8 +5884,8 @@ void DeleteObjectTile(int x, int y)
 
 int OpenObjects(wchar_t* FileName)
 {
-    FILE* fp = _wfopen(FileName, L"rb");
-    if (fp == NULL)
+    Core::Utilities::FileHandle file(_wfopen(FileName, L"rb"));
+    if (!file)
     {
         wchar_t Text[256];
         mu_swprintf(Text, L"%ls file not found.", FileName);
@@ -5887,14 +5893,16 @@ int OpenObjects(wchar_t* FileName)
         SendMessage(g_hWnd, WM_DESTROY, 0, 0);
         return (-1);
     }
-    fseek(fp, 0, SEEK_END);
-    int EncBytes = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    auto* EncData = new unsigned char[EncBytes];
-    fread(EncData, 1, EncBytes, fp);
-    fclose(fp);
+    std::optional<std::vector<BYTE>> EncData = DataFileIO::ReadAll(file.get());
+    file.reset();
+    if (!EncData || EncData->empty())
+    {
+        DataFileIO::ReportUnusableFile(FileName, L"File corrupted.");
+        return (-1);
+    }
+    const int EncBytes = static_cast<int>(EncData->size());
 
-    unsigned char* Data = EncData;
+    const unsigned char* Data = EncData->data();
     int DataBytes = EncBytes;
 
     int DataPtr = 0;
@@ -5922,15 +5930,14 @@ int OpenObjects(wchar_t* FileName)
         DataPtr += sizeof(Scale);
         CreateObject(Type, Position, Angle, Scale);
     }
-    delete[] Data;
 
     return iMapNumber;
 }
 
 int OpenObjectsEnc(wchar_t* FileName)
 {
-    FILE* fp = _wfopen(FileName, L"rb");
-    if (fp == NULL)
+    Core::Utilities::FileHandle file(_wfopen(FileName, L"rb"));
+    if (!file)
     {
         wchar_t Text[256];
         mu_swprintf(Text, L"%ls file not found.", FileName);
@@ -5938,17 +5945,19 @@ int OpenObjectsEnc(wchar_t* FileName)
         SendMessage(g_hWnd, WM_DESTROY, 0, 0);
         return (-1);
     }
-    fseek(fp, 0, SEEK_END);
-    int EncBytes = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    auto* EncData = new unsigned char[EncBytes];
-    fread(EncData, 1, EncBytes, fp);
-    fclose(fp);
+    std::optional<std::vector<BYTE>> EncData = DataFileIO::ReadAll(file.get());
+    file.reset();
+    if (!EncData || EncData->empty())
+    {
+        DataFileIO::ReportUnusableFile(FileName, L"File corrupted.");
+        return (-1);
+    }
+    const int EncBytes = static_cast<int>(EncData->size());
 
-    int DataBytes = MapFileDecrypt(NULL, EncData, EncBytes);
-    auto* Data = new unsigned char[DataBytes];
-    MapFileDecrypt(Data, EncData, EncBytes);
-    delete[] EncData;
+    int DataBytes = MapFileDecrypt(NULL, EncData->data(), EncBytes);
+    std::vector<unsigned char> Decrypted(static_cast<std::size_t>(DataBytes));
+    MapFileDecrypt(Decrypted.data(), EncData->data(), EncBytes);
+    const unsigned char* Data = Decrypted.data();
 
     int DataPtr = 0;
     DataPtr += 1;
@@ -5974,7 +5983,6 @@ int OpenObjectsEnc(wchar_t* FileName)
         DataPtr += sizeof(Scale);
         CreateObject(Type, Position, Angle, Scale);
     }
-    delete[] Data;
 
     return iMapNumber;
 }
@@ -6022,23 +6030,25 @@ bool SaveObjects(wchar_t* FileName, int iMapNumber)
     fclose(fp);
 
     {
-        fp = _wfopen(FileName, L"rb");
-        fseek(fp, 0, SEEK_END);
-        int EncBytes = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        auto* EncData = new unsigned char[EncBytes];
-        fread(EncData, 1, EncBytes, fp);
-        fclose(fp);
+        Core::Utilities::FileHandle plain(_wfopen(FileName, L"rb"));
+        std::optional<std::vector<BYTE>> EncData = plain ? DataFileIO::ReadAll(plain.get()) : std::nullopt;
+        plain.reset();
+        if (!EncData)
+        {
+            return false;
+        }
+        const int EncBytes = static_cast<int>(EncData->size());
 
-        int DataBytes = MapFileEncrypt(NULL, EncData, EncBytes);
-        auto* Data = new unsigned char[DataBytes];
-        MapFileEncrypt(Data, EncData, EncBytes);
-        delete[] EncData;
+        int DataBytes = MapFileEncrypt(NULL, EncData->data(), EncBytes);
+        std::vector<unsigned char> Data(static_cast<std::size_t>(DataBytes));
+        MapFileEncrypt(Data.data(), EncData->data(), EncBytes);
 
-        fp = _wfopen(FileName, L"wb");
-        fwrite(Data, DataBytes, 1, fp);
-        fclose(fp);
-        delete[] Data;
+        Core::Utilities::FileHandle encrypted(_wfopen(FileName, L"wb"));
+        if (!encrypted)
+        {
+            return false;
+        }
+        fwrite(Data.data(), DataBytes, 1, encrypted.get());
     }
     return true;
 }
@@ -6079,81 +6089,6 @@ void SaveTrapObjects(wchar_t* FileName)
     }
     fwprintf(fp, L"end\n");
     fclose(fp);
-}
-
-OBJECT  g_CloudsLow;
-void    RenderCloudLowLevel(int index, int Type)
-{
-    OBJECT* o = &g_CloudsLow;
-
-    o->Alpha = 1.f;
-    o->Live = true;
-    o->Type = Type;
-    o->SubType = 0;
-    o->Scale = 10.f;
-
-    if (o->LifeTime != 10)
-    {
-        Vector(0.f, 0.f, 0.f, o->StartPosition);
-        Vector(0.f, 0.f, 0.f, o->Position);
-    }
-    o->LifeTime = 10;
-
-    Vector(0.f, 0.f, 0.f, o->Angle);
-    Vector(0.f, 0.f, 0.f, o->HeadAngle);
-    Vector(0.f, 0.f, 0.f, o->HeadTargetAngle);
-
-    o->EnableBoneMatrix = false;
-    o->CurrentAction = 0;
-    o->PriorAction = 0;
-    o->AnimationFrame = 1.f;
-    o->PriorAnimationFrame = 1.f;
-
-    o->BlendMeshLight = 1.f;
-    o->LightEnable = true;
-
-    o->HiddenMesh = -1;
-
-    if (index != 0)
-    {
-        vec3_t  delPosition;
-        delPosition[0] = (Hero->Object.Position[0] - o->Position[0]);
-        delPosition[1] = (Hero->Object.Position[1] - o->Position[1]);
-        delPosition[2] = 0.f;
-
-        float Matrix[3][4];
-        vec3_t angle;
-
-        Vector(0.f, 0.f, -45.f, angle);
-        AngleMatrix(angle, Matrix);
-        VectorRotate(delPosition, Matrix, delPosition);
-
-        if (index == 1)
-        {
-            o->StartPosition[0] -= sinf(WorldTime * 0.0002f) * 0.001f;
-            o->StartPosition[1] += cosf(WorldTime * 0.0002f) * 0.001f;
-        }
-        else
-        {
-            o->StartPosition[0] += sinf(WorldTime * 0.0002f) * 0.001f;
-            o->StartPosition[1] -= cosf(WorldTime * 0.0002f) * 0.001f;
-        }
-
-        if (index == 1)
-        {
-            o->BlendMesh = -1;
-        }
-        else
-        {
-            o->BlendMeshLight = 1.f;
-            o->BlendMesh = 0;
-        }
-        o->BlendMeshTexCoordU = o->StartPosition[0];
-        o->BlendMeshTexCoordV = o->StartPosition[1];
-        Vector(Hero->Object.Position[0], Hero->Object.Position[1], Hero->Object.Position[2] - 150.f + (index * 20), o->Position);
-
-        RenderObject(o);
-    }
 }
 
 void ClearItems()
@@ -6417,6 +6352,8 @@ void CreateMoneyDrop(ITEM_t* ip, int amount, vec3_t position, bool isFreshDrop)
     n->AncientDiscriminator = 0;
     if (isFreshDrop)
     {
+        // The coins' sound is the item's, where it lands (Q-SM13).
+        const Audio::ScopedSoundPlace place(Audio::SoundKind::Item, Type, position);
         PlayBuffer(SOUND_DROP_GOLD01);
     }
 
@@ -6581,13 +6518,11 @@ void ItemHeight(int Type, BMD* b)
     b->BodyHeight = Render::Items::Display::GetGroundDisplay(Type).bodyHeight;
 }
 
-void RenderZen(int itemIndex, ITEM_t* item, vec3_t light)
+void RenderZen(int itemIndex, const ITEM_t* item, vec3_t light)
 {
     constexpr int MaxRenderedZenCoins = 12;
-    auto o = &item->Object;
+    const auto* o = &item->Object;
     auto k = itemIndex;
-    vec3_t tempPosition;
-    VectorCopy(o->Position, tempPosition);
 
     int coinCount = static_cast<int>(sqrtf(static_cast<float>(Items[k].Item.Level))) / 2;
 
@@ -6621,8 +6556,8 @@ void RenderZen(int itemIndex, ITEM_t* item, vec3_t light)
         AngleMatrix(randomAngle, angleMatrix);
         VectorRotate(randomRadius, angleMatrix, randomPosition);
 
-        VectorAdd(tempPosition, randomPosition, o->Position);
-        VectorCopy(o->Position, b->BodyOrigin);
+        // Each coin is drawn at its own place around the item.
+        VectorAdd(o->Position, randomPosition, b->BodyOrigin);
         b->Transform(BoneTransform, o->BoundingBoxMin, o->BoundingBoxMax, nullptr, true);
 
         target_vertex_index = b->AddToCoinHeap(i, target_vertex_index);
@@ -6630,8 +6565,6 @@ void RenderZen(int itemIndex, ITEM_t* item, vec3_t light)
 
     b->EndRenderCoinHeap(coinCount);
     b->EndRender();
-
-    VectorCopy(tempPosition, o->Position);
 }
 
 // Render dropped items and fall animation and camera rotation for items on the ground
@@ -6669,6 +6602,7 @@ void CullWorld()
     CullObjects();
     CullItems();
     CullMounts();
+    ThePetProcess().CullPets();
     CullBoids();
     CullEffects();
 }
@@ -6679,7 +6613,7 @@ void RenderItems()
     const mu::ScopedBloomExclusion classicItems;
     for (int i = 0; i < MAX_ITEMS; i++)
     {
-        OBJECT* o = &Items[i].Object;
+        const OBJECT* o = &Items[i].Object;
         if (o->Live)
         {
 #ifdef _EDITOR
@@ -6721,17 +6655,15 @@ void RenderItems()
                     Vector(1.0f, 1.0f, 1.0f, Light);
                 }
 
-                vec3_t vBackup;
-                VectorCopy(o->Position, vBackup);
-                DrawnItemPosition(i, vBackup, o->Position);
-
-                RenderPartObject(o, o->Type, NULL, Light, o->Alpha, DrawnItemLevel(Items[i].Item),
+                // Drawn from a copy at the item's drawn place.
+                OBJECT drawn = *o;
+                const Random::DrawnAs drawnAs(&drawn, o);
+                DrawnItemPosition(i, o->Position, drawn.Position);
+                RenderPartObject(&drawn, o->Type, NULL, Light, o->Alpha, DrawnItemLevel(Items[i].Item),
                                  Items[i].Item.ExcellentFlags, Items[i].Item.AncientDiscriminator, true, true, true);
-                VectorCopy(vBackup, o->Position);
 
 #ifdef _EDITOR
                 // Debug visualization: OBB used by SelectItem for ray-vs-pickup test.
-                // Drawn after RenderPartObject because that's what refreshes o->OBB this frame.
                 if (s_bShowItemPickBoxes)
                 {
                     RenderDebugBox(o->OBB.StartPos,
@@ -7435,16 +7367,24 @@ void SpawnNextGradeWeaponEffects(CHARACTER* c)
     } //for
 }
 
-void NextGradeObjectRender(CHARACTER* c)
+void NextGradeObjectRender(const CHARACTER* c)
 {
-    ForEachNextGradeObject(c, [c](PART_t* w, int type, int bone)
+    ForEachNextGradeObject(c, [c](const PART_t* w, int type, int bone)
                            { RenderLinkObject(0.f, 0.f, 0.f, c, w, type, 0, 0, true, true, 0, true, bone); });
 }
 
 void ForEachNextGradeObject(CHARACTER* c, const std::function<void(PART_t* part, int type, int bone)>& visit)
 {
+    // The parts are c's, which the caller may change.
+    ForEachNextGradeObject(static_cast<const CHARACTER*>(c), [&visit](const PART_t* part, int type, int bone)
+                           { visit(const_cast<PART_t*>(part), type, bone); });
+}
+
+void ForEachNextGradeObject(const CHARACTER* c,
+                            const std::function<void(const PART_t* part, int type, int bone)>& visit)
+{
     int Level;
-    PART_t* w;
+    const PART_t* w;
     int bornIndex[2]{}; // left, right;
     int gradeType[2]{}; // left, right;
 
@@ -7658,8 +7598,8 @@ void RefreshStunSkull(OBJECT* o, vec3_t Light)
 
 extern float g_Luminosity;
 
-void RenderPartObjectEffect(OBJECT* o, int Type, vec3_t Light, float Alpha, int ItemLevel, int ExcellentFlags,
-                            int ancientDiscriminator, int Select, int RenderType)
+void RenderPartObjectEffect(const OBJECT* o, int Type, const vec3_t Light, float Alpha, int ItemLevel,
+                            int ExcellentFlags, int ancientDiscriminator, int Select, int RenderType)
 {
     // The item effects and styles change the look for this draw; the object keeps its own.
     DrawLook look = DrawLook::Of(*o);
@@ -7672,7 +7612,7 @@ void RenderPartObjectEffect(OBJECT* o, int Type, vec3_t Light, float Alpha, int 
     }
     BMD* b = &Models[Type];
 
-    if (o->EnableShadow == true)
+    if (DrawsShadow(o))
     {
         if (gMapManager.WorldActive == 7)
         {
@@ -7703,7 +7643,8 @@ void RenderPartObjectEffect(OBJECT* o, int Type, vec3_t Light, float Alpha, int 
         {
             if (o->m_bRenderShadow)
             {
-                int iHiddenMesh = look.hiddenMesh;
+                int iHiddenMesh =
+                    s_shadowHiddenMesh != ShadowPass::ObjectHiddenMesh ? s_shadowHiddenMesh : look.hiddenMesh;
 
                 if (o->Type == MODEL_DREADFEAR)
                 {
@@ -7733,7 +7674,7 @@ void RenderPartObjectEffect(OBJECT* o, int Type, vec3_t Light, float Alpha, int 
         return;
     }
 
-    if (!o->EnableShadow)
+    if (!DrawsShadow(o))
     {
         float Luminosity = 1.f;
 
@@ -7998,7 +7939,7 @@ void RenderPartObjectEdge(BMD* b, const OBJECT* o, int Flag, bool Translate, flo
     BoneScale = Scale;
     const bool own = o->EnableBoneMatrix == 1;
     if (bones == nullptr)
-        bones = own ? o->BoneTransform : BoneTransform;
+        bones = own ? DrawnPose(o) : BoneTransform;
     b->Transform(bones, o->BoundingBoxMin, o->BoundingBoxMax, nullptr, own && Translate);
 
     if (o->Type == MODEL_WARCRAFT)
@@ -8038,26 +7979,6 @@ void RenderPartObjectEdge(BMD* b, const OBJECT* o, int Flag, bool Translate, flo
     }
 
     BoneScale = 1.f;
-}
-
-void RenderPartObjectEdge2(BMD* b, OBJECT* o, int Flag, bool Translate, float Scale, OBB_t* OBB)
-{
-    vec3_t tmp;
-
-    b->LightEnable = false;
-
-    BoneScale = Scale;
-    b->Transform(BoneTransform, tmp, tmp, OBB, Translate);
-    b->RenderBody(Flag, o->Alpha, o->BlendMesh, o->BlendMeshLight, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV, o->HiddenMesh);
-
-    BoneScale = 1.f;
-}
-
-void RenderPartObjectEdgeLight(BMD* b, OBJECT* o, int Flag, bool Translate, float Scale)
-{
-    float Luminosity = sinf(WorldTime * 0.001f) * 0.5f + 0.5f;
-    Vector(Luminosity * 1.f, Luminosity * 0.8f, Luminosity * 0.3f, b->BodyLight);
-    RenderPartObjectEdge(b, o, Flag, Translate, Scale);
 }
 
 // Which cloth a body part's model carries: 0 for none.
@@ -8154,14 +8075,16 @@ void StepPartCloth(OBJECT* o, PART_t* p, int Type, int ItemLevel, bool Translate
     }
 }
 
-void RenderPartObject(OBJECT* o, int Type, void* p2, vec3_t Light, float Alpha, int ItemLevel, int ExcellentFlags, int ancientDiscriminator, bool GlobalTransform, bool HideSkin, bool Translate, int Select, int RenderType)
+void RenderPartObject(const OBJECT* o, int Type, const void* p2, const vec3_t Light, float Alpha, int ItemLevel,
+                      int ExcellentFlags, int ancientDiscriminator, bool GlobalTransform, bool HideSkin, bool Translate,
+                      int Select, int RenderType)
 {
     if (Alpha <= 0.01f)
     {
         return;
     }
 
-    auto* p = (PART_t*)p2;
+    const auto* p = static_cast<const PART_t*>(p2);
 
     Type = Render::Items::Display::GetDrawnModel(Type, ItemLevel);
 
@@ -8225,7 +8148,7 @@ void RenderPartObject(OBJECT* o, int Type, void* p2, vec3_t Light, float Alpha, 
     }
     else
     {
-        b->Transform(o->BoneTransform, o->BoundingBoxMin, o->BoundingBoxMax, nullptr, Translate);
+        b->Transform(DrawnPose(o), o->BoundingBoxMin, o->BoundingBoxMax, nullptr, Translate);
     }
 
     if (p && p->m_pCloth[0] && PartClothKind(Type) > 0)
@@ -8354,7 +8277,7 @@ bool isPartyMemberBuff(int partyindex)
 }
 
 #ifdef CSK_DEBUG_RENDER_BOUNDINGBOX
-void RenderBoundingBox(OBJECT* pObj, std::uint32_t darkColor, std::uint32_t midColor, std::uint32_t lightColor)
+void RenderBoundingBox(const OBJECT* pObj, std::uint32_t darkColor, std::uint32_t midColor, std::uint32_t lightColor)
 {
     EnableAlphaBlend();
     mu::GetRenderer().PushMatrix();
@@ -8418,7 +8341,7 @@ void RenderBoundingBox(OBJECT* pObj, std::uint32_t darkColor, std::uint32_t midC
 // the camera - leaving only the sliver that pokes out past the real
 // silhouette, i.e. a thin outline shaped like the actual model instead of a
 // bounding-box cube.
-void RenderObjectOutline(OBJECT* pObj, std::uint32_t color)
+void RenderObjectOutline(const OBJECT* pObj, std::uint32_t color)
 {
     if (pObj == nullptr || pObj->Type < 0)
         return;

@@ -2,6 +2,8 @@
 #define __ZZZ_EFFECT_H__
 #include "Core/Utilities/Random.h"
 
+#include <array>
+
 namespace Render::EffectDrawing
 {
 struct SpriteDraw;
@@ -37,13 +39,17 @@ int CreateSprite(int Type, vec3_t Position, float Scale, vec3_t Light, OBJECT* O
 bool IsSpriteBloomExcluded(int sprite);
 // Sprites are drawn for one frame: the update clears last frame's before anything spawns new ones.
 void ClearSprites();
+// A new frame's draws: every live sprite is to draw again, whether or not an update ran since the last frame.
+void BeginSpriteDraws();
 void RenderSprites(BYTE byRenderOneMore = 0);
+// Which sprites this frame's passes already drew; a parity check gives it back to draw the world pass again.
+using SpriteDrawFlags = std::array<bool, MAX_SPRITES>;
+[[nodiscard]] SpriteDrawFlags SpritesDrawnThisFrame();
+void SetSpritesDrawnThisFrame(const SpriteDrawFlags& drawn);
 // The draw a live sprite asks for: its quad, its blend and whether bloom leaves it alone.
 Render::EffectDrawing::SpriteDraw DescribeSprite(const OBJECT& sprite, bool bloomExcluded);
-void CheckSprites();
 
 void AnimationFlag();
-void RenderFlag(OBJECT* o, vec3_t Light, int Tex1, int Tex2);
 
 int CreateParticle(int Type, vec3_t Position, vec3_t Angle, vec3_t Light, int SubType = 0, float Scale = 1.f,
                    OBJECT* Owner = NULL);

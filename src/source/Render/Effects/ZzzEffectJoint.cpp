@@ -19,6 +19,7 @@
 #include "Engine/AI/ZzzAI.h"
 #include "ZzzEffect.h"
 #include "Audio/DSPlaySound.h"
+#include "Audio/SoundPlaces.h"
 #include "Render/Effects/AuraJointLifecycle.h"
 #include "Network/Server/WSclient.h"
 #include "GameLogic/Pets/CSPetSystem.h"
@@ -32,6 +33,12 @@ using mu::PackABGR;
 
 extern float g_fBoneSave[10][3][4];
 extern int EditFlag;
+
+namespace
+{
+// A joint that lives until something removes it; 999999999 in the original client, which a float holds as 1e9.
+constexpr float EndlessLifeTime = 1.0e9f;
+} // namespace
 
 void CreateJointFpsChecked(int Type, vec3_t Position, vec3_t TargetPosition, vec3_t Angle, int SubType, OBJECT* Target, float Scale, short PKKey,
     WORD SkillIndex, WORD SkillSerialNum, int iChaIndex, const float* vPriorColor, short int sTargetindex)
@@ -128,6 +135,7 @@ void CreateJoint(int Type, vec3_t Position, vec3_t TargetPosition, vec3_t Angle,
         if (!o->Live)
         {
             o->Live = true;
+            Audio::RememberMaker(o);
             std::memset(o->Tails, 0, sizeof(o->Tails));
             o->TailFrames = 0.f;
             o->Type = Type;
@@ -334,7 +342,7 @@ void CreateJoint(int Type, vec3_t Position, vec3_t TargetPosition, vec3_t Angle,
                 case 32:
                 case 33:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     if (o->SubType == 5) o->MaxTails = 10;
                     else if (o->SubType == 10 || o->SubType == 11) o->MaxTails = 5;
                     else if (o->SubType == 14 || o->SubType == 15) o->MaxTails = 15;
@@ -387,32 +395,32 @@ void CreateJoint(int Type, vec3_t Position, vec3_t TargetPosition, vec3_t Angle,
                     break;
                 case 22:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 10;
                     UpdateJointTargetPosition(o, o->Target->EyeLeft);
                     break;
                 case 23:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 10;
                     UpdateJointTargetPosition(o, o->Target->EyeRight);
                     break;
                 case 24:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 10;
                     UpdateJointTargetPosition(o, o->Target->EyeLeft);
                     break;
                 case 25:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 10;
                     VectorCopy(o->Target->EyeRight, o->Position);
                     break;
                 case 40:
                 case 41:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     if (o->SubType == 5) o->MaxTails = 10;
                     VectorCopy(TargetPosition, o->Position);
                     break;
@@ -437,13 +445,13 @@ void CreateJoint(int Type, vec3_t Position, vec3_t TargetPosition, vec3_t Angle,
                 case 51:
                 case 52:
                 case 53:
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 3;
                     Vector(0.5f, 0.5f, 0.9f, o->Light);
                     break;
                 case 54:
                     o->Velocity = 0.f;
-                    o->LifeTime = 999999999;
+                    o->LifeTime = EndlessLifeTime;
                     o->MaxTails = 30;
                     o->TexType = BITMAP_SPARK + 1;
                     switch (o->PKKey)
@@ -6739,7 +6747,7 @@ void MoveJoint(JOINT* o, int iIndex)
                             BMD* b = &Models[MODEL_SHADOW_BODY];
                             b->Animation(BoneTransform, 0.f, 0.f, 0, o->Target->Angle, o->Target->HeadAngle, false, true);
                             // DXP-20 increment 2: this Transform() call feeds nothing but
-                            // RenderMeshEffect(0, ...)'s read of mesh 0's positions below -- no other
+                            // SpawnMeshEffects(0, ...)'s read of mesh 0's positions below -- no other
                             // draw or OBB dependency for this model, so it's a genuine standalone win.
                             // Map editor keeps the full path for OBB accuracy (o->Target->OBB is a
                             // real game object's picking box).
@@ -6757,11 +6765,11 @@ void MoveJoint(JOINT* o, int iIndex)
 
                             if (o->SubType == 0)
                             {
-                                b->RenderMeshEffect(0, MODEL_SKIN_SHELL);
+                                b->SpawnMeshEffects(0, MODEL_SKIN_SHELL);
                             }
                             else if (o->SubType == 1)
                             {
-                                b->RenderMeshEffect(0, MODEL_SKIN_SHELL, 1);
+                                b->SpawnMeshEffects(0, MODEL_SKIN_SHELL, 1);
                             }
                         }
                     }
@@ -7084,6 +7092,10 @@ void MoveJoints()
         JOINT* o = &Joints[i];
         if (o->Live)
         {
+            // The sounds a joint plays as it moves are marked at it, typed by
+            // its maker (Charon's energy sparks reaching her hand).
+            std::optional<Audio::ScopedSoundPlace> place;
+            Audio::PlaceEffect(place, o, o->Type, o->Position);
             MoveJoint(o, i);
         }
     }
@@ -7374,7 +7386,7 @@ void RenderJoints(BYTE bRenderOneMore)
     }
     for (int i = 0; i < MAX_JOINTS; i++)
     {
-        JOINT* o = &Joints[i];
+        const JOINT* o = &Joints[i];
         if (o->Type == BITMAP_JOINT_ENERGY && o->SubType == 54 && o->Target->CurrentAction != MONSTER01_ATTACK1)
             continue;
         if (o->Live && o->NumTails > 0 && o->RenderFace != 0)

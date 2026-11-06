@@ -37,6 +37,8 @@
 #include "Scenes/SceneCore.h"
 #include "Scenes/MainScene.h"
 #include "Audio/DSPlaySound.h"
+#include "Audio/SoundEventPlay.h"
+#include "Audio/SoundPlaces.h"
 #include "I18N/All.h"
 
 #include "Engine/Physics/PhysicsManager.h"
@@ -55,7 +57,6 @@
 #include "Data/GameData/MonsterData/MonsterDatabase.h"
 #include "Data/GameData/MonsterData/MonsterModelDatabase.h"
 #include "Engine/Object/MonsterModelBody.h"
-#include "Engine/Object/MonsterSlotSound.h"
 #include "GameLogic/Monsters/MonsterAttackPlay.h"
 #include "GameLogic/Monsters/MonsterSoundEvents.h"
 #include "GameLogic/Monsters/MonsterNames.h"
@@ -74,23 +75,54 @@ namespace
     constexpr float CHARSCENE_PICK_MIN_HEIGHT = 300.0f;
     constexpr float CHARSCENE_PICK_HALF_WIDTH = 72.0f;
 
-    // Plays the sound of the model's sound slot (0 to 4), of the second set
-    // for a monster with SubType 9; a slot without a sound plays nothing.
-    void PlaySlotSound(OBJECT* o, int slot)
+    // The draws the original client made for an idle sound while walking:
+    // one in 64 for the hero (a transformed player hears its own monster
+    // sounds), one in 16 for others, which the sets' idle events keep.
+    constexpr int HeroWalkIdleOneIn = 64;
+    constexpr int WalkIdleOneIn = 16;
+
+    // The sound events of the monster's sound set at the moment (monsters
+    // design, Q-MN76, Q-MN78), where the sound slots played; `chanceDrawn`
+    // as SoundEvents::PlayMoment.
+    void PlayMonsterMoment(CHARACTER* c, Data::Monsters::MonsterSoundMoment moment, bool chanceDrawn = false)
     {
-        const int played = Engine::Object::MonsterSlotSound::SlotFor(slot, o->SubType);
-        if (const std::optional<ESound> sound = Engine::Object::MonsterSlotSound::Find(Models[o->Type], played))
-        {
-            PlayBuffer(*sound, o);
-        }
+        GameLogic::Monsters::SoundEvents::PlayMoment(*c, moment, chanceDrawn);
     }
 
-    // Whether the slot that PlaySlotSound plays for the monster has a sound:
-    // for SubType 9, the second set's slot.
-    bool HasSlotSound(const OBJECT* o, int slot)
+    bool IsSkeleton(const OBJECT* o)
     {
-        const int played = Engine::Object::MonsterSlotSound::SlotFor(slot, o->SubType);
-        return Engine::Object::MonsterSlotSound::Find(Models[o->Type], played).has_value();
+        return o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3;
+    }
+
+    // A character that sounds as a monster, not a player, when it attacks, is
+    // hit or dies (no weapon swing, no voice): of a monster model, or a
+    // skeleton of the player model.
+    bool SoundsAsMonster(const OBJECT* o)
+    {
+        return o->Type != MODEL_PLAYER || IsSkeleton(o);
+    }
+
+    // The idle sounds of a step without a mount's sound, where the sound slots
+    // played them: the walk moment of the character's set (players have
+    // none), for the hero one time in 64 in place of the events' chance, and
+    // a skeleton's bone sound one time in 16.
+    void PlayWalkIdle(CHARACTER* c, OBJECT* o)
+    {
+        if (c == Hero)
+        {
+            if (rand_fps_check(HeroWalkIdleOneIn))
+            {
+                if (IsSkeleton(o))
+                    PlayBuffer(SOUND_BONE1, o);
+                PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Walk, true);
+            }
+            return;
+        }
+        if (o->Type == MODEL_PLAYER && rand_fps_check(WalkIdleOneIn) && IsSkeleton(o))
+        {
+            PlayBuffer(SOUND_BONE1, o);
+        }
+        PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Walk);
     }
 }
 
@@ -162,6 +194,7 @@ namespace
 #include "GameLogic/Social/MonkSystem.h"
 #include "UI/Core/WindowSystem.h"
 #include "Render/Lighting/LightMoodSetting.h"
+#include "Render/Effects/EffectDraw.h"
 
 CHARACTER* CharactersClient;
 CHARACTER CharacterView;
@@ -244,10 +277,11 @@ void FallingMonster(CHARACTER* c, OBJECT* o)
     o->Position[2] -= o->Gravity;
 }
 
-// The sounds of the model's sound events (monsters design, MN7).
-void PlayMonsterSound(OBJECT* pObject)
+// The sounds of the sound events of the monster's set (monsters design, MN7,
+// Q-MN78).
+void PlayMonsterSound(CHARACTER* c)
 {
-    GameLogic::Monsters::SoundEvents::Play(*pObject);
+    GameLogic::Monsters::SoundEvents::Play(*c);
 }
 
 void SetPlayerStop(CHARACTER* c)
@@ -440,21 +474,14 @@ void SetPlayerStop(CHARACTER* c)
             SetAction(&c->Object, MONSTER01_STOP1);
     }
 
-    if (rand_fps_check(16))
+    // Every character whose monster names a set, also a player-shaped one;
+    // players have none.
+    PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Stand);
+    if (o->Type == MODEL_PLAYER && rand_fps_check(16) && !IsSkeleton(o) && c->Helper.Type == MODEL_HORN_OF_FENRIR)
     {
-        if (o->Type != MODEL_PLAYER || (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
+        if (Random::Rand() % 3 == 0)
         {
-            if (HasSlotSound(o, 0))
-            {
-                PlaySlotSound(o, Random::Rand() % 2);
-            }
-        }
-        else if (c->Helper.Type == MODEL_HORN_OF_FENRIR)
-        {
-            if (Random::Rand() % 3 == 0)
-            {
-                PlayBuffer(static_cast<ESound>(SOUND_FENRIR_IDLE_1 + Random::Rand() % 2), o);
-            }
+            PlayBuffer(static_cast<ESound>(SOUND_FENRIR_IDLE_1 + Random::Rand() % 2), o);
         }
     }
 }
@@ -766,7 +793,7 @@ void SetPlayerWalk(CHARACTER* c)
     {
         SetAction(&c->Object, MONSTER01_WALK);
     }
-    PlayMonsterSound(o);
+    PlayMonsterSound(c);
     if (o->Type == MODEL_BALROG)
         PlayBuffer(SOUND_BONE2, o);
     else if (gCharacterManager.GetBaseClass(c->Class) == CLASS_DARK_LORD && c->Helper.Type == MODEL_DARK_HORSE_ITEM && !c->SafeZone)
@@ -793,17 +820,9 @@ void SetPlayerWalk(CHARACTER* c)
     {
         PlayBuffer(static_cast<ESound>(SOUND_FENRIR_RUN_1 + Random::Rand() % 2), o);
     }
-    else if ((c == Hero && rand_fps_check(64)) || (c != Hero && rand_fps_check(16)))
+    else
     {
-        if (o->Type != MODEL_PLAYER || (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
-        {
-            if (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3)
-                PlayBuffer(SOUND_BONE1, o);
-            if (HasSlotSound(o, 0))
-            {
-                PlaySlotSound(o, Random::Rand() % 2);
-            }
-        }
+        PlayWalkIdle(c, o);
     }
 }
 
@@ -1265,34 +1284,26 @@ void SetPlayerAttack(CHARACTER* c)
     else
         if (c->Object.AnimationFrame == 0.f)
         {
-            PlayMonsterSound(o);
+            PlayMonsterSound(c);
 
-            if (o->Type != MODEL_PLAYER || (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
+            if (SoundsAsMonster(o))
             {
-                if (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3)
+                if (IsSkeleton(o))
                     PlayBuffer(static_cast<ESound>(SOUND_BRANDISH_SWORD01 + Random::Rand() % 2), o);
-                if (HasSlotSound(o, 2))
-                {
-                    PlaySlotSound(o, 2 + Random::Rand() % 2);
-                }
             }
             else
             {
-                if (gCharacterManager.GetEquipedBowType(c) == BOWTYPE_BOW)
+                // What the player holds plays which swing: the sound events
+                // (Q-SE1).
+                Data::Sounds::SoundEventContext context;
+                context.holds = Audio::HeldWeaponOf(*c);
+                if (const std::optional<ESound> sound =
+                        Audio::PickEventSound(Data::Sounds::PlayerAttackSwingEvent, context))
                 {
-                    PlayBuffer(SOUND_BOW01, o);
+                    PlayBuffer(*sound, o);
                 }
-                else if (gCharacterManager.GetEquipedBowType(c) == BOWTYPE_CROSSBOW)
-                {
-                    PlayBuffer(SOUND_CROSSBOW01, o);
-                }
-                else if (c->Weapon[0].Type >= MODEL_BLUEWING_CROSSBOW && c->Weapon[0].Type < MODEL_ARROWS)
-                    PlayBuffer(SOUND_MAGIC, o);
-                else if (c->Weapon[0].Type == MODEL_LIGHT_SABER || c->Weapon[0].Type == MODEL_SPEAR)
-                    PlayBuffer(SOUND_BRANDISH_SWORD03, o);
-                else if (c->Weapon[0].Type != -1 || c->Weapon[1].Type != -1)
-                    PlayBuffer(static_cast<ESound>(SOUND_BRANDISH_SWORD01 + Random::Rand() % 2), o);
             }
+            PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Attack);
         }
     c->SwordCount++;
 }
@@ -1386,16 +1397,12 @@ void SetPlayerShock(CHARACTER* c, int Hit)
         }
         if (c->Object.AnimationFrame == 0.f)
         {
-            PlayMonsterSound(o);
+            PlayMonsterSound(c);
 
-            if (o->Type != MODEL_PLAYER || (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
+            if (SoundsAsMonster(o))
             {
-                if (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3)
+                if (IsSkeleton(o))
                     PlayBuffer(SOUND_BONE1, o);
-                else if (o->Type != MODEL_ASSASSIN && HasSlotSound(o, 2))
-                {
-                    PlaySlotSound(o, 2 + Random::Rand() % 2);
-                }
             }
             else
             {
@@ -1409,6 +1416,7 @@ void SetPlayerShock(CHARACTER* c, int Hit)
                 else
                     PlayBuffer(static_cast<ESound>(SOUND_FEMALE_SCREAM01 + Random::Rand() % 2), o);
             }
+            PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Hit);
         }
 
         if (o->Type == MODEL_CASTLE_GATE)
@@ -1513,21 +1521,16 @@ void SetPlayerDie(CHARACTER* c)
 
     if (c->Object.AnimationFrame == 0.f)
     {
-        PlayMonsterSound(o);
+        PlayMonsterSound(c);
+        const bool monsterSounds = SoundsAsMonster(o);
+        PlayMonsterMoment(c, Data::Monsters::MonsterSoundMoment::Death);
         if (gMapManager.InChaosCastle() == true)
         {
             PlayBuffer(static_cast<ESound>(SOUND_CHAOS_MOB_BOOM01 + Random::Rand() % 2), o);
         }
         else
         {
-            if (o->Type != MODEL_PLAYER || (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
-            {
-                if (HasSlotSound(o, 4))
-                {
-                    PlaySlotSound(o, 4);
-                }
-            }
-            else
+            if (!monsterSounds)
             {
                 if (!gCharacterManager.IsFemale(c->Class))
                 {
@@ -3640,7 +3643,7 @@ void AnimationCharacter(CHARACTER* c, OBJECT* o, BMD* b)
             EtcStopAnimationSetting(c, o);
         }
         if (o->CurrentAction == MONSTER01_STOP1 || o->CurrentAction == MONSTER01_STOP2)
-            PlayMonsterSound(o);
+            PlayMonsterSound(c);
 
         if (o->Type == MODEL_WARCRAFT)
         {
@@ -3964,6 +3967,8 @@ void PlayAttackHitSound(CHARACTER* attacker, OBJECT* o)
 
 void MoveCharacter(CHARACTER* c, OBJECT* o)
 {
+    std::optional<Audio::ScopedSoundPlace> place;
+    Audio::PlaceCharacter(place, *c);
     if (o->Type == MODEL_WARCRAFT)
     {
         wchar_t Text[100];
@@ -4802,7 +4807,7 @@ void MoveCharacter(CHARACTER* c, OBJECT* o)
                     }
                     PlayBuffer(SOUND_HIT_CRISTAL);
                 }
-                battleCastle::RenderMonsterHitEffect(to);
+                battleCastle::SpawnMonsterHitEffect(to);
             }
             if (o->CurrentAction >= PLAYER_ATTACK_SKILL_SWORD1 && o->CurrentAction <= PLAYER_ATTACK_SKILL_SWORD5)
             {
@@ -5265,44 +5270,26 @@ void PlayWalkSound()
     }
     else
     {
-        if (gMapManager.WorldActive == WD_2DEVIAS && (HeroTile != 3 && HeroTile < 10))
+        // Which step plays on which ground: the sound events (Q-SE1).
+        Data::Sounds::SoundEventContext context;
+        context.world = gMapManager.WorldActive;
+        context.tile = HeroTile;
+        context.safeZone = Hero->SafeZone;
+        if (const std::optional<ESound> sound = Audio::PickEventSound(Data::Sounds::HeroFootstepEvent, context))
         {
-            PlayBuffer(SOUND_HUMAN_WALK_SNOW);
-        }
-        else if (gMapManager.WorldActive == WD_0LORENCIA && HeroTile == 0)
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_GRASS);
-        }
-        else if (gMapManager.WorldActive == WD_3NORIA && HeroTile == 0)
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_GRASS);
-        }
-        else if ((gMapManager.WorldActive == WD_7ATLANSE || gMapManager.InHellas() || gMapManager.WorldActive == WD_67DOPPLEGANGER3) && !Hero->SafeZone)
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_SWIM);
-        }
-        else if (IsIceCity())
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_SNOW);
-        }
-        else if (IsSantaTown())
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_SNOW);
-        }
-        else
-        {
-            PlayBuffer(SOUND_HUMAN_WALK_GROUND);
+            PlayBuffer(*sound);
         }
     }
 }
 
-bool CheckFullSet(CHARACTER* c)
+// Whether `c` wears a full set; levelSet is the set's lowest level (9 and up), addDefense its defense bonus.
+static bool FullSetOf(const CHARACTER* c, int& levelSet, bool& addDefense)
 {
     int tmpLevel = 10;
     bool Success = true;
     int  start = 5, end = 1;
 
-    EquipmentLevelSet = 0;
+    levelSet = 0;
 
     bool bHero = false;
 
@@ -5343,13 +5330,13 @@ bool CheckFullSet(CHARACTER* c)
                 int Level = CharacterMachine->Equipment[i].Level;
                 if (Level < 9)
                 {
-                    EquipmentLevelSet = 0;
+                    levelSet = 0;
                     Success = false;
                     break;
                 }
                 if (Type != Data::Items::GetItemNumber(CharacterMachine->Equipment[i].Type))
                 {
-                    EquipmentLevelSet = 0;
+                    levelSet = 0;
                     Success = false;
                     break;
                 }
@@ -5357,12 +5344,12 @@ bool CheckFullSet(CHARACTER* c)
                 if (Level >= 9 && tmpLevel >= Level)
                 {
                     tmpLevel = Level;
-                    EquipmentLevelSet = Level;
+                    levelSet = Level;
                 }
             }
         }
 
-        g_bAddDefense = true;
+        addDefense = true;
 
         if (gCharacterManager.GetBaseClass(c->Class) == CLASS_DARK && Success)
         {
@@ -5375,7 +5362,7 @@ bool CheckFullSet(CHARACTER* c)
                 && CharacterMachine->Equipment[EQUIPMENT_ARMOR].Type != ITEM_PHANTOM_ARMOR
                 )
             {
-                g_bAddDefense = false;
+                addDefense = false;
             }
         }
     }
@@ -5400,13 +5387,13 @@ bool CheckFullSet(CHARACTER* c)
                 int Level = c->BodyPart[i].Level & 0xf;
                 if (Level < 9)
                 {
-                    EquipmentLevelSet = 0;
+                    levelSet = 0;
                     Success = false;
                     break;
                 }
                 if (Type != Data::Items::GetItemNumber(Data::Items::ToItemType(c->BodyPart[i].Type)))
                 {
-                    EquipmentLevelSet = 0;
+                    levelSet = 0;
                     Success = false;
                     break;
                 }
@@ -5414,12 +5401,12 @@ bool CheckFullSet(CHARACTER* c)
                 if (Level >= 9 && tmpLevel >= Level)
                 {
                     tmpLevel = Level;
-                    EquipmentLevelSet = Level;
+                    levelSet = Level;
                 }
             }
         }
 
-        g_bAddDefense = true;
+        addDefense = true;
 
         if (gCharacterManager.GetBaseClass(c->Class) == CLASS_DARK && Success)
         {
@@ -5432,16 +5419,29 @@ bool CheckFullSet(CHARACTER* c)
                 && c->BodyPart[BODYPART_ARMOR].Type != ITEM_PHANTOM_ARMOR
                 )
             {
-                g_bAddDefense = false;
+                addDefense = false;
             }
         }
     }
 
+    return Success;
+}
+
+bool CheckFullSet(CHARACTER* c)
+{
+    const bool full = FullSetOf(c, EquipmentLevelSet, g_bAddDefense);
     if (gMapManager.InChaosCastle())
     {
         ChangeChaosCastleUnit(c);
     }
-    return Success;
+    return full;
+}
+
+bool IsFullSet(const CHARACTER* c)
+{
+    int levelSet = 0;
+    bool addDefense = false;
+    return FullSetOf(c, levelSet, addDefense);
 }
 
 void MoveEye(OBJECT* o, BMD* b, int Right, int Left, int Right2, int Left2, int Right3, int Left3)
@@ -5496,6 +5496,9 @@ void MonsterMoveSandSmoke(OBJECT* o)
 
 void MoveCharacterVisual(CHARACTER* c, OBJECT* o)
 {
+    // NPCs play their sounds here (Elf Lala's harp, the Chaos Goblin's mix).
+    std::optional<Audio::ScopedSoundPlace> place;
+    Audio::PlaceCharacter(place, *c);
     BMD* b = &Models[o->Type];
     if (b->NumActions == 0)
     {
@@ -6531,12 +6534,11 @@ void WaitCharactersAnimation()
 
 extern thread_local float  ParentMatrix[3][4];
 
-void RenderGuild(OBJECT* o, int Type, vec3_t vPos)
+void RenderGuild(const OBJECT* o, int Type, vec3_t vPos)
 {
     EnableAlphaTest();
     EnableCullFace();
     BindTexture(BITMAP_GUILD);
-    mu::GetRenderer().PushMatrix();
 
     float Matrix[3][4];
     vec3_t Angle;
@@ -6563,15 +6565,15 @@ void RenderGuild(OBJECT* o, int Type, vec3_t vPos)
         Matrix[2][3] = vPos[2];
     }
 
-    R_ConcatTransforms(o->BoneTransform[26], Matrix, ParentMatrix);
-    mu::GetRenderer().Translate(o->Position[0], o->Position[1], o->Position[2]);
-    RenderPlane3D(5.f, 7.f, ParentMatrix);
-
-    mu::GetRenderer().PopMatrix();
+    R_ConcatTransforms(DrawnPose(o)[26], Matrix, ParentMatrix);
+    Render::EffectDrawing::PlaneDraw plane{
+        .position = {o->Position[0], o->Position[1], o->Position[2]}, .width = 5.f, .height = 7.f};
+    std::memcpy(plane.rotation, ParentMatrix, sizeof(plane.rotation));
+    Render::EffectDrawing::ActiveEffectDrawer().DrawPlane(plane);
     DisableCullFace();
 }
 
-void RenderBrightEffect(BMD* b, vec34_t* bones, int Bitmap, int Link, float Scale, vec3_t Light, OBJECT* o)
+void SpawnBrightSprite(BMD* b, vec34_t* bones, int Bitmap, int Link, float Scale, vec3_t Light, OBJECT* o)
 {
     vec3_t p, Position;
     Vector(0.f, 0.f, 0.f, p);
@@ -6595,9 +6597,11 @@ struct LinkPlacement
 };
 
 LinkPlacement PlaceLinkedPart(float x, float y, float z, const CHARACTER* c, BYTE linkBone, float ownerScale, int Type,
-                              bool Link, bool bRightHandItem)
+                              bool Link, bool bRightHandItem, vec34_t* bones = nullptr)
 {
     const OBJECT* o = &c->Object;
+    if (bones == nullptr)
+        bones = o->BoneTransform;
     LinkPlacement placement;
     placement.scale = ownerScale;
     vec3_t p;
@@ -6865,17 +6869,17 @@ LinkPlacement PlaceLinkedPart(float x, float y, float z, const CHARACTER* c, BYT
             R_ConcatTransforms(Matrix, mNewRot, Matrix);
         }
 
-        R_ConcatTransforms(o->BoneTransform[linkBone], Matrix, placement.parent);
+        R_ConcatTransforms(bones[linkBone], Matrix, placement.parent);
         VectorCopy(c->Object.Position, placement.origin);
     }
     else
     {
         Vector(x, y, z, p);
         // As BMD::RotationPosition, with the character model's scale.
-        VectorRotate(p, o->BoneTransform[linkBone], placement.position);
+        VectorRotate(p, bones[linkBone], placement.position);
         VectorScale(placement.position, Models[o->Type].BodyScale, placement.position);
         VectorAdd(c->Object.Position, placement.position, placement.origin);
-        std::memcpy(placement.parent, o->BoneTransform[linkBone], sizeof(placement.parent));
+        std::memcpy(placement.parent, bones[linkBone], sizeof(placement.parent));
     }
     if (Type == MODEL_BOSS_HEAD)
     {
@@ -6884,7 +6888,7 @@ LinkPlacement PlaceLinkedPart(float x, float y, float z, const CHARACTER* c, BYT
     }
     return placement;
 }
-bool DrawsHeldWeapon(CHARACTER* c, int hand);
+bool DrawsHeldWeapon(const CHARACTER* c, int hand);
 
 // Sets up an item object of a part type from the character the part is on.
 void SetUpItemObject(OBJECT* Object, const CHARACTER* c, int Type)
@@ -6892,7 +6896,7 @@ void SetUpItemObject(OBJECT* Object, const CHARACTER* c, int Type)
     const OBJECT* o = &c->Object;
     Object->Type = Type;
     ItemObjectAttribute(Object);
-    Object->EnableShadow = o->EnableShadow;
+    Object->EnableShadow = DrawsShadow(o);
     Object->m_bRenderShadow = o->m_bRenderShadow;
     Object->m_bySkillCount = o->m_bySkillCount;
     g_CharacterCopyBuff(Object, o);
@@ -6918,9 +6922,9 @@ unsigned short LinkedPartAction(const CHARACTER* c, const PART_t* f)
 }
 
 // Parts no draw shows: Cursed Temple players' wings and capes, summoner books, and anything on a cloaked character.
-bool HidesLinkedPart(CHARACTER* c, int Type)
+bool HidesLinkedPart(const CHARACTER* c, int Type)
 {
-    OBJECT* o = &c->Object;
+    const OBJECT* o = &c->Object;
     if (o->SubType == MODEL_CURSEDTEMPLE_ALLIED_PLAYER || o->SubType == MODEL_CURSEDTEMPLE_ILLUSION_PLAYER)
     {
         if (Type >= MODEL_WING && Type <= MODEL_WINGS_OF_DARKNESS)
@@ -7010,12 +7014,15 @@ void PoseLinkedPart(const CHARACTER* c, int Type, bool Link, const Engine::Objec
 }
 } // namespace
 
-vec34_t* RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, int Type, int Level, int Option1,
-                          bool Link, bool Translate, int RenderType, bool bRightHandItem, int linkBone)
+vec34_t* RenderLinkObject(float x, float y, float z, const CHARACTER* c, const PART_t* f, int Type, int Level,
+                          int Option1, bool Link, bool Translate, int RenderType, bool bRightHandItem, int linkBone,
+                          const LinkedPartLook* look)
 {
+    const float ownerScale = look != nullptr ? look->ownerScale : c->Object.Scale;
+    const float* light = look != nullptr ? look->light : c->Light;
     // A bone the call hangs the part from, where it differs from the part's own.
     const auto bone = static_cast<unsigned char>(linkBone >= 0 ? linkBone : f->LinkBone);
-    OBJECT* o = &c->Object;
+    const OBJECT* o = &c->Object;
     BMD* b = &Models[Type];
 
     if (HidesLinkedPart(c, Type))
@@ -7028,7 +7035,7 @@ vec34_t* RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, in
 
     // CopyShadowAngle(f,b);
     b->ContrastEnable = o->ContrastEnable;
-    b->BodyScale = o->Scale;
+    b->BodyScale = ownerScale;
     b->CurrentAction = LinkedPartAction(c, f);
     b->BodyHeight = 0.f;
 
@@ -7049,7 +7056,8 @@ vec34_t* RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, in
 
     OBB_t OBB;
 
-    const LinkPlacement placement = PlaceLinkedPart(x, y, z, c, bone, o->Scale, Type, Link, bRightHandItem);
+    const LinkPlacement placement =
+        PlaceLinkedPart(x, y, z, c, bone, ownerScale, Type, Link, bRightHandItem, DrawnPose(o));
     std::memcpy(ParentMatrix, placement.parent, sizeof(placement.parent));
     VectorCopy(placement.origin, b->BodyOrigin);
     VectorCopy(placement.angle, Object->Angle);
@@ -7110,7 +7118,11 @@ vec34_t* RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, in
         && Type != MODEL_WING + 135 // Small Cape of Fighter
         )
     {
-        RenderPartObjectEffect(Object, Type, c->Light, o->Alpha, Level, Option1, false, 0, RenderType | ((c->MonsterIndex == MONSTER_METAL_BALROG || c->MonsterIndex == MONSTER_ORC_ARCHER_OF_DOOM) ? (RENDER_EXTRA | RENDER_TEXTURE) : RENDER_TEXTURE));
+        RenderPartObjectEffect(
+            Object, Type, light, o->Alpha, Level, Option1, false, 0,
+            RenderType | ((c->MonsterIndex == MONSTER_METAL_BALROG || c->MonsterIndex == MONSTER_ORC_ARCHER_OF_DOOM)
+                              ? (RENDER_EXTRA | RENDER_TEXTURE)
+                              : RENDER_TEXTURE));
     }
 
     // Restore the caller's active bone transform — the linked item render above overwrote
@@ -7240,23 +7252,23 @@ void SpawnLinkedPartEffects(CHARACTER* c, int Type, OBJECT* Object, vec34_t* bon
             Vector(Luminosity * 0.6f, Luminosity * 1.f, Luminosity * 0.8f, Light);
 
             for (int i = 13; i <= 18; i++)
-                RenderBrightEffect(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
+                SpawnBrightSprite(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
         }
         else if (Type == MODEL_CELESTIAL_BOW)
         {
             Vector(Luminosity * 0.5f, Luminosity * 0.5f, Luminosity * 0.8f, Light);
 
             for (int i = 13; i <= 18; i++)
-                RenderBrightEffect(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
+                SpawnBrightSprite(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
 
             for (int i = 5; i <= 8; i++)
-                RenderBrightEffect(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
+                SpawnBrightSprite(b, bones, BITMAP_SHINY + 1, i, 1.f, Light, o);
         }
         else
         {
             Vector(Luminosity * 1.f, Luminosity * 0.6f, Luminosity * 0.2f, Light);
-            RenderBrightEffect(b, bones, BITMAP_SHINY + 1, 2, 1.f, Light, o);
-            RenderBrightEffect(b, bones, BITMAP_SHINY + 1, 6, 1.f, Light, o);
+            SpawnBrightSprite(b, bones, BITMAP_SHINY + 1, 2, 1.f, Light, o);
+            SpawnBrightSprite(b, bones, BITMAP_SHINY + 1, 6, 1.f, Light, o);
         }
         break;
     case MODEL_DIVINE_STAFF_OF_ARCHANGEL:
@@ -8609,7 +8621,7 @@ void SpawnLinkedPartEffects(CHARACTER* c, int Type, OBJECT* Object, vec34_t* bon
 }
 } // namespace
 
-void RenderLight(OBJECT* o, int Texture, float Scale, int Bone, float x, float y, float z)
+void SpawnBoneLight(OBJECT* o, int Texture, float Scale, int Bone, float x, float y, float z)
 {
     BMD* b = &Models[o->Type];
     vec3_t p, Position;
@@ -8621,7 +8633,7 @@ void RenderLight(OBJECT* o, int Texture, float Scale, int Bone, float x, float y
     CreateSprite(Texture, Position, Scale, Light, o);
 }
 
-void RenderEye(OBJECT* o, int Left, int Right, float fSize = 1.0f)
+void SpawnEyeLights(OBJECT* o, int Left, int Right, float fSize = 1.0f)
 {
     BMD* b = &Models[o->Type];
     vec3_t p, Position;
@@ -8657,43 +8669,43 @@ bool UpdateCharacterTypeEffects(CHARACTER* c, OBJECT* o, BMD* b)
     case MODEL_BULL_FIGHTER:
     case MODEL_DEATH_COW:
         if ((o->Type == MODEL_BULL_FIGHTER && c->Level == 1) || (o->Type == MODEL_DEATH_COW))
-            RenderEye(o, 22, 23);
+            SpawnEyeLights(o, 22, 23);
         break;
     case MODEL_CRUST:
-        RenderEye(o, 26, 27, 2.0f);
+        SpawnEyeLights(o, 26, 27, 2.0f);
         break;
     case MODEL_HYDRA:
-        RenderLight(o, BITMAP_LIGHTNING + 1, 1.f, 63, 0.f, 0.f, 20.f);
-        RenderLight(o, BITMAP_SHINY + 2, 4.f, 63, 0.f, 0.f, 20.f);
+        SpawnBoneLight(o, BITMAP_LIGHTNING + 1, 1.f, 63, 0.f, 0.f, 20.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 4.f, 63, 0.f, 0.f, 20.f);
         break;
     case MODEL_VEPAR:
-        RenderLight(o, BITMAP_LIGHTNING + 1, 0.5f, 30, 0.f, 0.f, -5.f);
-        RenderLight(o, BITMAP_LIGHTNING + 1, 0.5f, 39, 0.f, 0.f, -5.f);
-        RenderLight(o, BITMAP_SPARK, 4.f, 30, 0.f, 0.f, -5.f);
-        RenderLight(o, BITMAP_SPARK, 4.f, 39, 0.f, 0.f, -5.f);
-        RenderLight(o, BITMAP_SHINY + 2, 2.f, 30, 0.f, 0.f, -5.f);
-        RenderLight(o, BITMAP_SHINY + 2, 2.f, 39, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_LIGHTNING + 1, 0.5f, 30, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_LIGHTNING + 1, 0.5f, 39, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 4.f, 30, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 4.f, 39, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 2.f, 30, 0.f, 0.f, -5.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 2.f, 39, 0.f, 0.f, -5.f);
         break;
     case MODEL_LIZARD:
-        RenderEye(o, 42, 43);
-        RenderLight(o, BITMAP_SPARK, 2.f, 26, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SPARK, 2.f, 31, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SPARK, 2.f, 36, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SPARK, 2.f, 41, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SHINY + 2, 1.f, 26, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SHINY + 2, 1.f, 31, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SHINY + 2, 1.f, 36, 0.f, 0.f, 0.f);
-        RenderLight(o, BITMAP_SHINY + 2, 1.f, 41, 0.f, 0.f, 0.f);
+        SpawnEyeLights(o, 42, 43);
+        SpawnBoneLight(o, BITMAP_SPARK, 2.f, 26, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 2.f, 31, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 2.f, 36, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 2.f, 41, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 1.f, 26, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 1.f, 31, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 1.f, 36, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 1.f, 41, 0.f, 0.f, 0.f);
         break;
     case MODEL_BAHAMUT:
-        RenderLight(o, BITMAP_SPARK, 4.f, 9, 0.f, 0.f, 5.f);
-        RenderLight(o, BITMAP_SHINY + 2, 3.f, 9, 0.f, 0.f, 5.f);
+        SpawnBoneLight(o, BITMAP_SPARK, 4.f, 9, 0.f, 0.f, 5.f);
+        SpawnBoneLight(o, BITMAP_SHINY + 2, 3.f, 9, 0.f, 0.f, 5.f);
         break;
     case MODEL_MIX_NPC:
-        RenderLight(o, BITMAP_LIGHT, 1.5f, 32, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_LIGHT, 1.5f, 32, 0.f, 0.f, 0.f);
         break;
     case MODEL_NPC_SEVINA:
-        RenderLight(o, BITMAP_LIGHT, 2.5f, 6, 0.f, 0.f, 0.f);
+        SpawnBoneLight(o, BITMAP_LIGHT, 2.5f, 6, 0.f, 0.f, 0.f);
         break;
     case MODEL_NPC_DEVILSQUARE:
     {
@@ -8832,7 +8844,7 @@ struct Cloak
 };
 
 // Whether a character wears a simulated cape, and its tint; its simulation and its draw both read it.
-Cloak CloakOf(CHARACTER* c, OBJECT* o)
+Cloak CloakOf(const CHARACTER* c, const OBJECT* o)
 {
     Cloak cloak;
 
@@ -8922,7 +8934,7 @@ Cloak CloakOf(CHARACTER* c, OBJECT* o)
 }
 
 // The cape cloths a character's draw leaves out; its simulation skips them too.
-bool IsCloakClothHidden(CHARACTER* c, int i, const vec3_t light)
+bool IsCloakClothHidden(const CHARACTER* c, int i, const vec3_t light)
 {
     if (gCharacterManager.GetBaseClass(c->Class) == CLASS_DARK_LORD)
     {
@@ -9313,7 +9325,7 @@ bool UpdateTransformCharacterState(CHARACTER* c)
 }
 
 // Whether RenderCharacter draws a player's body parts into the shadow pass.
-bool DrawsPlayerBodyShadow(CHARACTER* c, OBJECT* o)
+bool DrawsPlayerBodyShadow(const CHARACTER* c, const OBJECT* o)
 {
     return gMapManager.WorldActive != WD_10HEAVEN && o->Type == MODEL_PLAYER &&
            (!(MODEL_HORN_OF_UNIRIA <= c->Helper.Type && c->Helper.Type <= MODEL_HORN_OF_DINORANT) || c->SafeZone) &&
@@ -9321,13 +9333,13 @@ bool DrawsPlayerBodyShadow(CHARACTER* c, OBJECT* o)
 }
 
 // Whether RenderCharacter shows a character's +15 weapon sparks and armor pieces.
-bool DrawsNextGradeObjects(CHARACTER* c)
+bool DrawsNextGradeObjects(const CHARACTER* c)
 {
     return !gMapManager.InChaosCastle() && !(gMapManager.IsCursedTemple() && !c->SafeZone);
 }
 
 // Whether RenderCharacter's transformation chain reaches the player's own body parts.
-bool DrawsPlayerBodyParts(CHARACTER* c, OBJECT* o)
+bool DrawsPlayerBodyParts(const CHARACTER* c, const OBJECT* o)
 {
     const int sub = o->SubType;
     if (o->Kind == KIND_NPC && gMapManager.WorldActive == WD_0LORENCIA && o->Type == MODEL_PLAYER &&
@@ -9526,45 +9538,39 @@ int WingCarriedModels(const CHARACTER* c, WingCarriedModel (&models)[2])
 
 // The Red Dragon's head and the princess it carries, or a Saint statue's archangel weapon: models that play on the
 // wing part, whose animation the update sets (PrepareCarriedParts).
-void RenderWingCarriedModels(CHARACTER* c, bool Translate)
+void RenderWingCarriedModels(const CHARACTER* c, bool Translate)
 {
-    OBJECT* o = &c->Object;
-    const float scale = o->Scale;
-    vec3_t light;
-    VectorCopy(c->Light, light);
+    static const vec3_t white = {1.f, 1.f, 1.f};
     WingCarriedModel models[2];
     const int count = WingCarriedModels(c, models);
     for (int i = 0; i < count; ++i)
     {
         const WingCarriedModel& m = models[i];
         // The princess is lit white.
-        if (m.type == MODEL_PRINCESS)
-            Vector(1.f, 1.f, 1.f, c->Light);
-        o->Scale = m.scale;
-        RenderLinkObject(m.x, m.y, m.z, c, &c->Wing, m.type, 0, 0, m.link, Translate, 0, true, m.bone);
+        const LinkedPartLook look{m.scale, m.type == MODEL_PRINCESS ? white : c->Light};
+        RenderLinkObject(m.x, m.y, m.z, c, &c->Wing, m.type, 0, 0, m.link, Translate, 0, true, m.bone, &look);
     }
-    VectorCopy(light, c->Light);
-    o->Scale = scale;
 }
 
-void RenderChristmasCompanions(CHARACTER* c, bool Translate, int Select)
+void RenderChristmasCompanions(const CHARACTER* c, vec3_t light, bool Translate, int Select)
 {
-    OBJECT* o = &c->Object;
-    // Three copies around the character, each on the ground where it stands; the character stays where it is.
+    const OBJECT* o = &c->Object;
+    // Three copies around the character, each on the ground where it stands, drawn from a copy of the character.
     constexpr float offsets[3][2] = {{50.f, 50.f}, {-50.f, -50.f}, {50.f, -50.f}};
-    vec3_t standing;
-    VectorCopy(o->Position, standing);
+    OBJECT companion = *o;
+    const Random::DrawnAs drawnAs(&companion, o);
+    // The copy's address has no drawn pose of its own, so it carries the character's.
+    companion.BoneTransform = DrawnPose(o);
     for (const auto& offset : offsets)
     {
-        o->Position[0] = standing[0] + offset[0];
-        o->Position[1] = standing[1] + offset[1];
-        o->Position[2] = RequestTerrainHeight(o->Position[0], o->Position[1]);
-        RenderPartObject(o, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        companion.Position[0] = o->Position[0] + offset[0];
+        companion.Position[1] = o->Position[1] + offset[1];
+        companion.Position[2] = RequestTerrainHeight(companion.Position[0], companion.Position[1]);
+        RenderPartObject(&companion, o->SubType, NULL, light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
-    VectorCopy(standing, o->Position);
 }
 
-void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
+void RenderCharacter(const CHARACTER* c, const OBJECT* o, int Select)
 {
     if (g_isCharacterBuff(o, eBuff_CrywolfNPCHide))
     {
@@ -9581,9 +9587,8 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
 
     Vector(0.f, 0.f, 0.f, p);
     Vector(1.f, 1.f, 1.f, Light);
-    // The body draws in a light of its own; the update's light is back for the rest of the draw and after it.
-    vec3_t preparedLight;
-    VectorCopy(c->Light, preparedLight);
+    // The body draws in a light of its own; the rest of the draw uses the update's.
+    vec3_t bodyLight;
 
     BYTE byRender = CHARACTER_NONE;
 
@@ -9627,10 +9632,10 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     {
         if (DrawsPlayerBodyShadow(c, o))
         {
-            o->EnableShadow = true;
+            const ShadowPass shadow;
             for (int i = MAX_BODYPART - 1; i >= 0; i--)
             {
-                PART_t* p = &c->BodyPart[i];
+                const PART_t* p = &c->BodyPart[i];
                 if (p->Type != -1)
                 {
                     int Type = p->Type;
@@ -9651,7 +9656,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                     continue;
                 }
 
-                PART_t* p = &c->Weapon[i];
+                const PART_t* p = &c->Weapon[i];
 
                 if (p->Type != -1 && c->SafeZone == false)
                 {
@@ -9661,7 +9666,6 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                     RenderLinkObject(0.f, 0.f, 0.f, c, &ShadowPart, Type, 0, 0, false, Translate);
                 }
             }
-            o->EnableShadow = false;
         }
     }
 
@@ -9699,19 +9703,15 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     {
         if (o->Alpha >= 0.3f)
         {
-            // An archangel's shadow leaves out its wings' mesh.
-            const int hiddenMesh = o->HiddenMesh;
-            if (c->MonsterIndex == MONSTER_ARCHANGEL || c->MonsterIndex == MONSTER_MESSENGER_OF_ARCH)
-                o->HiddenMesh = 2;
-
             if (o->Type != MODEL_STATUE_OF_SAINT && o->Type != MODEL_CASTLE_GATE &&
                 !(o->Type >= MODEL_FACE && o->Type <= MODEL_FACE + 6))
             {
-                o->EnableShadow = true;
+                // An archangel's shadow leaves out its wings' mesh.
+                const bool archangel =
+                    c->MonsterIndex == MONSTER_ARCHANGEL || c->MonsterIndex == MONSTER_MESSENGER_OF_ARCH;
+                const ShadowPass shadow(archangel ? 2 : ShadowPass::ObjectHiddenMesh);
                 RenderPartObject(&c->Object, o->Type, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
-                o->EnableShadow = false;
             }
-            o->HiddenMesh = hiddenMesh;
             if (c->MonsterIndex == MONSTER_ARCHANGEL || c->MonsterIndex == MONSTER_MESSENGER_OF_ARCH)
             {
                 EnableAlphaBlend();
@@ -9724,8 +9724,8 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                 float Luminosity = sinf(WorldTime * 0.0015f) * 0.3f + 0.8f;
 
                 Vector(Luminosity * 0.5f, Luminosity * 0.5f, Luminosity, Light);
-                RenderTerrainAlphaBitmap(BITMAP_MAGIC + 1, o->Position[0], o->Position[1], 2.7f, 2.7f, Light,
-                                         -o->Angle[2]);
+                Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                    BITMAP_MAGIC + 1, o->Position[0], o->Position[1], 2.7f, 2.7f, Light, -o->Angle[2]));
             }
         }
     }
@@ -9775,7 +9775,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     }
     else if (c->MonsterIndex == MONSTER_ALQUAMOS)
     {
-        // Tints c->Light below.
+        // Tints the body light below.
         const float Luminosity = (float)(Random::DrawRand(o, 1) % 30 + 70) * 0.01f;
         Vector(Luminosity * 0.6f, Luminosity * 0.7f, Luminosity * 0.8f, Light);
     }
@@ -9789,7 +9789,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     }
     else if (c->MonsterIndex == MONSTER_DRAKAN || c->MonsterIndex == MONSTER_GREAT_DRAKAN)
     {
-        // Tints c->Light below.
+        // Tints the body light below.
         if (c->MonsterIndex == MONSTER_DRAKAN)
             Vector(0.1f, 0.1f, 1.f, Light);
 
@@ -9808,20 +9808,22 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         float fSin = 0.5f * (1.0f + sinf((float)((int)WorldTime % 10000) * 0.001f));
         RenderPartObjectBodyColor(&Models[o->Type], o, o->Type, o->Alpha, RENDER_CHROME | RENDER_BRIGHT,
                                   0.3f + fSin * 0.7f);
-        // Its blend mesh light is set by the update.
-        const int blendMesh = o->BlendMesh;
-        o->BlendMesh = 0;
-        RenderObject(o, Translate, 2, 0);
-        RenderObject(o, Translate, 3, 0);
-        o->BlendMesh = blendMesh;
-        o->Type++;
-        RenderObject(o, Translate, Select, 0);
+        // Its blend mesh light is set by the update. Its outlines draw without the blend mesh, and its second model
+        // (its type + 1) over the body: both from copies of the object.
+        OBJECT outline = *o;
+        const Random::DrawnAs outlineDrawnAs(&outline, o);
+        outline.BlendMesh = 0;
+        RenderObject(&outline, Translate, 2, 0);
+        RenderObject(&outline, Translate, 3, 0);
+        OBJECT second = *o;
+        const Random::DrawnAs secondDrawnAs(&second, o);
+        ++second.Type;
+        RenderObject(&second, Translate, Select, 0);
 
         if (auto* pCloth = (CPhysicsCloth*)c->Object.m_pCloth)
         {
             pCloth[0].Render();
         }
-        o->Type--;
     }
 
     if (c->MonsterIndex == MONSTER_GOLDEN_TITAN || c->MonsterIndex == MONSTER_GOLDEN_SOLDIER)
@@ -9839,7 +9841,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
 
     if (o->Type == MODEL_NPC_CHERRYBLOSSOM)
     {
-        // Tints c->Light below.
+        // Tints the body light below.
         const float Luminosity = absf(sinf(WorldTime * 0.002f)) * 0.4f;
         Vector(0.5f + Luminosity, 0.0f + Luminosity, 0.0f + Luminosity, Light);
     }
@@ -9849,7 +9851,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     {
         if (c->HideShadow == false)
         {
-            fullset = CheckFullSet(c);
+            fullset = IsFullSet(c);
         }
     }
 
@@ -9865,10 +9867,10 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         Render::Lighting::LightMood::CorrectFigureTerrainLight(o->Position[0], o->Position[1], Light);
     }
 
-    VectorAdd(Light, o->Light, c->Light);
+    VectorAdd(Light, o->Light, bodyLight);
     if (o->Type == MODEL_DARK_PHEONIX_SHIELD)
     {
-        Vector(.6f, .6f, .6f, c->Light);
+        Vector(.6f, .6f, .6f, bodyLight);
     }
 
     else if (c->MonsterIndex >= MONSTER_TERRIBLE_BUTCHER && c->MonsterIndex <= MONSTER_DOPPELGANGER_SUM)
@@ -9876,11 +9878,11 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         // Its shadow, alpha, blend mesh and rise are set by the update.
         if (gMapManager.WorldActive == WD_65DOPPLEGANGER1)
         {
-            Vector(0.5f, 0.7f, 1.0f, c->Light);
+            Vector(0.5f, 0.7f, 1.0f, bodyLight);
         }
         else if (o->CurrentAction != PLAYER_DIE1)
         {
-            Vector(1.0f, 0.3f, 0.1f, c->Light);
+            Vector(1.0f, 0.3f, 0.1f, bodyLight);
         }
         else
         {
@@ -9888,7 +9890,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
             if (fAlpha < 0)
                 fAlpha = 0;
 
-            Vector(1.0f * fAlpha, 0.3f * fAlpha, 0.1f * fAlpha, c->Light);
+            Vector(1.0f * fAlpha, 0.3f * fAlpha, 0.1f * fAlpha, bodyLight);
         }
     }
 
@@ -9922,16 +9924,16 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         if (SceneFlag == CHARACTER_SCENE)
         {
             Vector(0.5f, 0.5f, 0.5f, Light);
-            VectorAdd(Light, o->Light, c->Light);
+            VectorAdd(Light, o->Light, bodyLight);
         }
         else
-            Render::Lighting::LightMood::ScaleOwnHeroLight(o->Position[0], o->Position[1], AbilityLight, c->Light);
+            Render::Lighting::LightMood::ScaleOwnHeroLight(o->Position[0], o->Position[1], AbilityLight, bodyLight);
     }
 
     if (o->Kind == KIND_NPC && gMapManager.WorldActive == WD_0LORENCIA && o->Type == MODEL_PLAYER &&
         (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, c->Level, 0, 0, false, false, Translate,
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, c->Level, 0, 0, false, false, Translate,
                          Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER &&
@@ -9946,24 +9948,24 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         PART_t* p = &skin;
         if (o->CurrentAction == PLAYER_SKILL_DRAGONKICK)
         {
-            RenderCharacter_AfterImage(c, p, Translate, Select, 2.5f, 1.0f);
+            RenderCharacter_AfterImage(c, p, bodyLight, Translate, Select, 2.5f, 1.0f);
         }
         else if (o->CurrentAction == PLAYER_SKILL_DARKSIDE_READY || o->CurrentAction == PLAYER_SKILL_DARKSIDE_ATTACK)
         {
-            OBJECT* pObj = &c->Object;
+            const OBJECT* pObj = &c->Object;
             if (pObj->m_sTargetIndex < 0 || c->JumpTime > 0)
             {
-                RenderPartObject(&c->Object, o->SubType, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate,
+                RenderPartObject(&c->Object, o->SubType, p, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate,
                                  Select);
             }
             else
             {
-                g_CMonkSystem.DarksideRendering(c, p, Translate, Select, &c->BodyPart[BODYPART_HEAD]);
+                g_CMonkSystem.DarksideRendering(c, p, bodyLight, Translate, Select, &c->BodyPart[BODYPART_HEAD]);
             }
         }
         else
         {
-            RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate,
+            RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate,
                              Select);
         }
 
@@ -9974,37 +9976,37 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_SKELETON_PCBANG)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_HALLOWEEN)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_CURSEDTEMPLE_ALLIED_PLAYER)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_CURSEDTEMPLE_ILLUSION_PLAYER)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_PANDA)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_SKELETON_CHANGED)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_XMAS_EVENT_CHANGE_GIRL)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
 
         RenderParts(c);
     }
     else if (o->Kind == KIND_PLAYER && o->Type == MODEL_PLAYER && o->SubType == MODEL_GM_CHARACTER)
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
 
         if (!g_isCharacterBuff(o, eBuff_Cloaking))
         {
@@ -10016,10 +10018,10 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
             const float fLumi = sinf(WorldTime * 0.0015f) * 0.3f + 0.5f;
             EnableAlphaBlend();
             Vector(fLumi * vLight[0], fLumi * vLight[1], fLumi * vLight[2], vLight);
-            RenderTerrainAlphaBitmap(BITMAP_GM_AURORA, o->Position[0], o->Position[1], 1.5f, 1.5f, vLight,
-                                     WorldTime * 0.01f);
-            RenderTerrainAlphaBitmap(BITMAP_GM_AURORA, o->Position[0], o->Position[1], 1.f, 1.f, vLight,
-                                     -WorldTime * 0.01f);
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_GM_AURORA, o->Position[0], o->Position[1], 1.5f, 1.5f, vLight, WorldTime * 0.01f));
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_GM_AURORA, o->Position[0], o->Position[1], 1.f, 1.f, vLight, -WorldTime * 0.01f));
             // RenderAurora ( BITMAP_GM_AURORA, RENDER_BRIGHT, o->Position[0], o->Position[1], 1.5f, 1.5f, vLight );
 
             DisableAlphaBlend();
@@ -10029,11 +10031,11 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
              (o->SubType == MODEL_XMAS_EVENT_CHA_SSANTA || o->SubType == MODEL_XMAS_EVENT_CHA_SNOWMAN ||
               o->SubType == MODEL_XMAS_EVENT_CHA_DEER))
     {
-        RenderChristmasCompanions(c, Translate, Select);
+        RenderChristmasCompanions(c, bodyLight, Translate, Select);
     }
     else if (o->Type == MODEL_PLAYER && (o->SubType >= MODEL_SKELETON1 && o->SubType <= MODEL_SKELETON3))
     {
-        RenderPartObject(&c->Object, o->SubType, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate, Select);
+        RenderPartObject(&c->Object, o->SubType, NULL, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate, Select);
     }
     else if (!c->Change)
     {
@@ -10053,24 +10055,24 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
             if ((o->CurrentAction == PLAYER_SKILL_DRAGONKICK) &&
                 (gCharacterManager.GetBaseClass(c->Class) == CLASS_RAGEFIGHTER))
             {
-                RenderCharacter_AfterImage(c, p, Translate, Select, 2.5f, 1.0f);
+                RenderCharacter_AfterImage(c, p, bodyLight, Translate, Select, 2.5f, 1.0f);
             }
             else if ((gCharacterManager.GetBaseClass(c->Class) == CLASS_RAGEFIGHTER))
             {
-                OBJECT* pObj = &c->Object;
+                const OBJECT* pObj = &c->Object;
                 if (pObj->m_sTargetIndex < 0 || c->JumpTime > 0)
                 {
-                    RenderPartObject(&c->Object, MODEL_ANGEL, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate,
+                    RenderPartObject(&c->Object, MODEL_ANGEL, p, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate,
                                      Select, RenderType);
                 }
                 else
                 {
-                    g_CMonkSystem.DarksideRendering(c, p, Translate, Select, &c->BodyPart[BODYPART_HEAD]);
+                    g_CMonkSystem.DarksideRendering(c, p, bodyLight, Translate, Select, &c->BodyPart[BODYPART_HEAD]);
                 }
             }
             else
             {
-                RenderPartObject(&c->Object, MODEL_ANGEL, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate,
+                RenderPartObject(&c->Object, MODEL_ANGEL, p, bodyLight, o->Alpha, 0, 0, 0, false, false, Translate,
                                  Select, RenderType);
             }
         }
@@ -10079,7 +10081,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         {
             for (int i = MAX_BODYPART - 1; i >= 0; i--)
             {
-                PART_t* p = &c->BodyPart[i];
+                const PART_t* p = &c->BodyPart[i];
                 if (p->Type != -1)
                 {
                     int Type = p->Type;
@@ -10128,14 +10130,14 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                     if (c->MonsterIndex >= MONSTER_TERRIBLE_BUTCHER && c->MonsterIndex <= MONSTER_DOPPELGANGER_SUM)
                     {
                         if (gMapManager.WorldActive == WD_65DOPPLEGANGER1)
-                            RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, p->Level, p->ExcellentFlags,
+                            RenderPartObject(&c->Object, Type, p, bodyLight, o->Alpha, p->Level, p->ExcellentFlags,
                                              p->AncientDiscriminator, false, false, Translate, Select,
                                              RENDER_DOPPELGANGER | RENDER_TEXTURE);
                         else
-                            RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, p->Level, p->ExcellentFlags,
+                            RenderPartObject(&c->Object, Type, p, bodyLight, o->Alpha, p->Level, p->ExcellentFlags,
                                              p->AncientDiscriminator, false, false, Translate, Select,
                                              RENDER_DOPPELGANGER | RENDER_BRIGHT | RENDER_TEXTURE);
-                        // 						RenderPartObject(&c->Object,Type,p,c->Light,o->Alpha,p->Level<<3,p->Option1,p->ExtOption,false,false,Translate,
+                        // 						RenderPartObject(&c->Object,Type,p,bodyLight,o->Alpha,p->Level<<3,p->Option1,p->ExtOption,false,false,Translate,
                         // 							Select,RENDER_DOPPELGANGER|RENDER_BRIGHT|RENDER_CHROME);
                     }
                     else
@@ -10143,24 +10145,24 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                         if ((o->CurrentAction == PLAYER_SKILL_DRAGONKICK) &&
                             (gCharacterManager.GetBaseClass(c->Class) == CLASS_RAGEFIGHTER))
                         {
-                            RenderCharacter_AfterImage(c, p, Translate, Select, 2.5f, 1.0f);
+                            RenderCharacter_AfterImage(c, p, bodyLight, Translate, Select, 2.5f, 1.0f);
                         }
                         else if ((o->CurrentAction == PLAYER_SKILL_DARKSIDE_READY) &&
                                  (gCharacterManager.GetBaseClass(c->Class) == CLASS_RAGEFIGHTER))
                         {
                             if (o->m_sTargetIndex < 0 || c->JumpTime > 0)
                             {
-                                RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, p->Level, p->ExcellentFlags,
+                                RenderPartObject(&c->Object, Type, p, bodyLight, o->Alpha, p->Level, p->ExcellentFlags,
                                                  p->AncientDiscriminator, false, false, Translate, Select);
                             }
                             else
                             {
-                                g_CMonkSystem.DarksideRendering(c, p, Translate, Select);
+                                g_CMonkSystem.DarksideRendering(c, p, bodyLight, Translate, Select);
                             }
                         }
                         else
                         {
-                            RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, p->Level, p->ExcellentFlags,
+                            RenderPartObject(&c->Object, Type, p, bodyLight, o->Alpha, p->Level, p->ExcellentFlags,
                                              p->AncientDiscriminator, false, false, Translate, Select);
                         }
                     }
@@ -10211,7 +10213,6 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         }
     }
 
-    VectorCopy(preparedLight, c->Light);
 
     if (DrawsNextGradeObjects(c))
         NextGradeObjectRender(c);
@@ -10233,7 +10234,7 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
         {
             if (!DrawsHeldWeapon(c, i))
                 continue;
-            PART_t* w = &c->Weapon[i];
+            const PART_t* w = &c->Weapon[i];
             if (g_CMonkSystem.IsSwordformGloves(w->Type))
                 g_CMonkSystem.RenderSwordformGloves(c, w->Type, i, o->Alpha, Translate, Select);
             else
@@ -10480,6 +10481,8 @@ void UpdateMonsterBodyEffects(CHARACTER* c, OBJECT* o, BMD* b)
                     CreateParticle(BITMAP_FIRE, Position, o->Angle, Light, 0, 0.3f);
                 }
             }
+            break;
+        default:
             break;
         }
     }
@@ -11393,9 +11396,9 @@ void UpdatePlayerEffects(CHARACTER* c, OBJECT* o, BMD* b)
 namespace
 {
 // A cloaked character of another siege side than the hero's, which the hero doesn't see during the castle siege.
-bool IsHiddenBySiegeCloak(CHARACTER* c)
+bool IsHiddenBySiegeCloak(const CHARACTER* c)
 {
-    OBJECT* o = &c->Object;
+    const OBJECT* o = &c->Object;
     if (c == Hero || !battleCastle::IsBattleCastleStart() || !g_isCharacterBuff(o, eBuff_Cloaking))
         return false;
 
@@ -11449,9 +11452,9 @@ void RefreshCharacterPoses()
 
 // Whether RenderCharacter draws the weapon of this hand: a real weapon, and not the first one during the start of
 // a fury strike or while a post-move process runs.
-bool DrawsHeldWeapon(CHARACTER* c, int hand)
+bool DrawsHeldWeapon(const CHARACTER* c, int hand)
 {
-    OBJECT* o = &c->Object;
+    const OBJECT* o = &c->Object;
     if (hand == 0 && ((o->CurrentAction == PLAYER_ATTACK_SKILL_FURY_STRIKE && o->AnimationFrame <= 4.f) ||
                       c->PostMoveProcess_IsProcessing()))
         return false;
@@ -11706,11 +11709,11 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
         case MODEL_CHAOS_LIGHTNING_STAFF:
             Success = false;
             Vector(Luminosity * 0.4f, Luminosity * 0.6f, Luminosity * 1.f, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 1, 27, 2.f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 1, 27, 2.f, Light, o);
 
             for (int j = 28; j <= 37; j++)
             {
-                RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, j, 1.5f, Light, o);
+                SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, j, 1.5f, Light, o);
             }
             break;
         case MODEL_STAFF_OF_RESURRECTION:
@@ -11767,7 +11770,7 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
             Vector(0.5f + Luminosity, 0.2f + Luminosity, 0.9f + Luminosity, Light);
 
             for (int j = 1; j <= 4; ++j)
-                RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
+                SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
             break;
         case MODEL_DEMONIC_STICK:
             Success = false;
@@ -11777,11 +11780,11 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
 
             for (int j = 1; j <= 2; ++j)
             {
-                RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 1, j, Scale + 1.0f, Light, o);
-                RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
+                SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 1, j, Scale + 1.0f, Light, o);
+                SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
             }
             Vector(0.8f + Luminosity, 0.6f + Luminosity, 0.3f + Luminosity, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, 3, Scale + 1.0f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, 3, Scale + 1.0f, Light, o);
             break;
         case MODEL_STORM_BLITZ_STICK:
             Success = false;
@@ -11790,10 +11793,10 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
             Vector(0.5f + Luminosity, 0.2f + Luminosity, 0.9f + Luminosity, Light);
 
             for (int j = 2; j <= 3; ++j)
-                RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
+                SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, j, Scale + 1.0f, Light, o);
 
             Vector(0.8f + Luminosity, 0.6f + Luminosity, 0.3f + Luminosity, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 2, 2, Scale + 1.0f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 2, 2, Scale + 1.0f, Light, o);
             break;
         case MODEL_ETERNAL_WING_STICK:
             Success = false;
@@ -11803,7 +11806,7 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
             CreateSprite(BITMAP_EVENT_CLOUD, p, 0.25f, Light, o, -(int)WorldTime * 0.1f);
             CreateSprite(BITMAP_EVENT_CLOUD, p, 0.25f, Light, o, -(int)WorldTime * 0.2f);
             Vector(1.0f, 0.4f, 0.3f, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 1, 2, 1.0f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 1, 2, 1.0f, Light, o);
             Vector(1.0f, 0.2f, 0.0f, Light);
             if (rand_fps_check(1))
             {
@@ -11815,7 +11818,7 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
             if (rand_fps_check(20))
                 CreateParticle(BITMAP_SPARK + 1, p, o->Angle, Light, 20, 1.0f);
             Vector(1.0f, 0.0f, 0.0f, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_LIGHT, 2, 3.0f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_LIGHT, 2, 3.0f, Light, o);
 #endif // ASG_ADD_ETERNALWING_STICK_EFFECT
             break;
         case MODEL_SAINT_CROSSBOW:
@@ -11858,8 +11861,8 @@ void SpawnHeldWeaponGlow(CHARACTER* c, PART_t* w, vec34_t* weaponBones, float Lu
                 CreateSprite(BITMAP_SHINY + 1, p, 1.f, Light, o);
             }
             Vector(Scale * 0.5f, Scale * 0.1f, Scale * 0.05f, Light);
-            RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 1, 2, 1.f, Light, o);
-            RenderBrightEffect(b, weaponBones, BITMAP_SHINY + 1, 6, 1.f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 1, 2, 1.f, Light, o);
+            SpawnBrightSprite(b, weaponBones, BITMAP_SHINY + 1, 6, 1.f, Light, o);
             break;
         case MODEL_BLUEWING_CROSSBOW:
         case MODEL_AQUAGOLD_CROSSBOW:
@@ -12061,6 +12064,40 @@ static BMD* PlaceCharacterModel(OBJECT* o)
     return b;
 }
 
+// The effects of the character's type, or else of the first map whose monster
+// effects claim it.
+static void UpdateTypeAndMapMonsterEffects(CHARACTER* c, OBJECT* o, BMD* b)
+{
+    if (UpdateCharacterTypeEffects(c, o, b))
+        return;
+    // Same order and stop-on-claim as RenderCharacter's chain.
+    if (UpdateHellasMonsterEffects(c, o, b))
+        return;
+    if (battleCastle::UpdateBattleCastleMonsterEffects(c, o, b))
+        return;
+    if (M31HuntingGround::UpdateHuntingGroundMonsterEffects(c, o, b))
+        return;
+    if (M34CryWolf1st::UpdateCryWolf1stMonsterEffects(c, o, b))
+        return;
+    if (M33Aida::UpdateAidaMonsterEffects(c, o, b))
+        return;
+    if (M37Kanturu1st::UpdateKanturu1stMonsterEffects(c, o, b))
+        return;
+    if (M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(c, o, b))
+        return;
+    if (M39Kanturu3rd::UpdateKanturu3rdMonsterEffects(c, o, b))
+        return;
+    if (SEASON3A::CGM3rdChangeUp::Instance().UpdateBalgasBarrackMonsterEffects(c, o, b))
+        return;
+    if (g_CursedTemple->UpdateMonsterEffects(c, o, b))
+        return;
+    if (SEASON3B::GMNewTown::UpdateMonsterEffects(c, o, b))
+        return;
+    if (SEASON3C::GMSwampOfQuiet::UpdateMonsterEffects(c, o, b))
+        return;
+    TheMapProcess().UpdateMonsterEffects(c, o, b);
+}
+
 void UpdateDrawnCharacterEffects()
 {
     for (int i = 0; i < MAX_CHARACTERS_CLIENT; ++i)
@@ -12070,6 +12107,8 @@ void UpdateDrawnCharacterEffects()
             continue;
 
         OBJECT* o = &c->Object;
+        std::optional<Audio::ScopedSoundPlace> place;
+        Audio::PlaceCharacter(place, *c);
         BMD* b = PlaceCharacterModel(o);
         PrepareHeldWeapons(c);
         UpdateAttachedParts(c);
@@ -12104,34 +12143,10 @@ void UpdateDrawnCharacterEffects()
             SpawnProtectGuildMark(c);
         if (o->Type == MODEL_PLAYER)
             battleCastle::CreateBattleCastleCharacter_Visual(c, o);
-        if (UpdateCharacterTypeEffects(c, o, b))
-            continue;
-        // Same order and stop-on-claim as RenderCharacter's chain.
-        if (UpdateHellasMonsterEffects(c, o, b))
-            continue;
-        if (battleCastle::UpdateBattleCastleMonsterEffects(c, o, b))
-            continue;
-        if (M31HuntingGround::UpdateHuntingGroundMonsterEffects(c, o, b))
-            continue;
-        if (M34CryWolf1st::UpdateCryWolf1stMonsterEffects(c, o, b))
-            continue;
-        if (M33Aida::UpdateAidaMonsterEffects(c, o, b))
-            continue;
-        if (M37Kanturu1st::UpdateKanturu1stMonsterEffects(c, o, b))
-            continue;
-        if (M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(c, o, b))
-            continue;
-        if (M39Kanturu3rd::UpdateKanturu3rdMonsterEffects(c, o, b))
-            continue;
-        if (SEASON3A::CGM3rdChangeUp::Instance().UpdateBalgasBarrackMonsterEffects(c, o, b))
-            continue;
-        if (g_CursedTemple->UpdateMonsterEffects(c, o, b))
-            continue;
-        if (SEASON3B::GMNewTown::UpdateMonsterEffects(c, o, b))
-            continue;
-        if (SEASON3C::GMSwampOfQuiet::UpdateMonsterEffects(c, o, b))
-            continue;
-        TheMapProcess().UpdateMonsterEffects(c, o, b);
+        UpdateTypeAndMapMonsterEffects(c, o, b);
+        // The sound events of the drawn frame, unless a map's code played
+        // them where it played its sounds (the Aida monsters).
+        GameLogic::Monsters::SoundEvents::FinishDrawnFrame(*c);
     }
 }
 } // namespace
@@ -12317,8 +12332,8 @@ void RenderCharactersClient()
     const mu::ScopedBloomExclusion classicCharacters;
     for (int i = 0; i < MAX_CHARACTERS_CLIENT; ++i)
     {
-        CHARACTER* c = &CharactersClient[i];
-        OBJECT* o = &c->Object;
+        const CHARACTER* c = &CharactersClient[i];
+        const OBJECT* o = &c->Object;
 
         // The update cleared a target the siege cloak hides, and moved a hidden GM's pick box away.
         if (IsHiddenBySiegeCloak(c) || IsHiddenGameMaster(c))
@@ -12598,6 +12613,11 @@ void CreateCharacterPointer(CHARACTER* c, int Type, unsigned char PositionX, uns
     o->Kind = KIND_PLAYER;
     c->Change = false;
     o->SubType = 0;
+    c->SoundOncePlayed = false;
+    c->SoundsDrawnThisFrame = false;
+    // A new frame for its model's timers; their last ticks stay (Q-MN91).
+    c->ModelTimersAsked = false;
+    c->ModelTimerTicks = 0;
     c->MonsterIndex = MONSTER_UNDEFINED;
     o->BlendMeshTexCoordU = 0.f;
     o->BlendMeshTexCoordV = 0.f;
@@ -12774,6 +12794,20 @@ void SetCharacterScale(CHARACTER* c)
             case CLASS_DARK_LORD: c->Object.Scale = 0.92f; break;
             case CLASS_SUMMONER:	c->Object.Scale = 0.90f; break;
             case CLASS_RAGEFIGHTER:	c->Object.Scale = 1.03f; break;
+            // The other values, listed without a default: a value added later fails the build here.
+            case CLASS_SOULMASTER:
+            case CLASS_BLADEKNIGHT:
+            case CLASS_MUSEELF:
+            case CLASS_BLOODYSUMMONER:
+            case CLASS_GRANDMASTER:
+            case CLASS_BLADEMASTER:
+            case CLASS_HIGHELF:
+            case CLASS_DUELMASTER:
+            case CLASS_LORDEMPEROR:
+            case CLASS_DIMENSIONMASTER:
+            case CLASS_TEMPLENIGHT:
+            case CLASS_UNDEFINED:
+                break;
             }
         }
         else
@@ -12787,6 +12821,20 @@ void SetCharacterScale(CHARACTER* c)
             case CLASS_DARK_LORD: c->Object.Scale = 0.92f; break;
             case CLASS_SUMMONER:	c->Object.Scale = 0.90f; break;
             case CLASS_RAGEFIGHTER:	c->Object.Scale = 1.03f; break;
+            // The other values, listed without a default: a value added later fails the build here.
+            case CLASS_SOULMASTER:
+            case CLASS_BLADEKNIGHT:
+            case CLASS_MUSEELF:
+            case CLASS_BLOODYSUMMONER:
+            case CLASS_GRANDMASTER:
+            case CLASS_BLADEMASTER:
+            case CLASS_HIGHELF:
+            case CLASS_DUELMASTER:
+            case CLASS_LORDEMPEROR:
+            case CLASS_DIMENSIONMASTER:
+            case CLASS_TEMPLENIGHT:
+            case CLASS_UNDEFINED:
+                break;
             }
         }
     }
@@ -15591,7 +15639,7 @@ CHARACTER* CreateHellGate(char* ID, int Key, EMonsterType Index, int x, int y, i
     return portal;
 }
 
-bool IsBackItem(CHARACTER* c, int iType)
+bool IsBackItem(const CHARACTER* c, int iType)
 {
     int iBowType = gCharacterManager.GetEquipedBowType(c);
     if (iBowType != BOWTYPE_NONE)
@@ -15639,7 +15687,7 @@ bool AreWeaponsOnBack(const CHARACTER* c, const OBJECT* o)
 
 // Whether RenderCharacterBackItem draws weapon `index` on the back: an earlier weapon on the back keeps the later
 // ones there, ammunition always goes there, and the rest only where the weapons are bound to the back.
-bool DrawsWeaponOnBack(CHARACTER* c, const OBJECT* o, int index)
+bool DrawsWeaponOnBack(const CHARACTER* c, const OBJECT* o, int index)
 {
     if (o->Type != MODEL_PLAYER || c->Weapon[index].Type < 0)
         return false;
@@ -15775,9 +15823,9 @@ void ImpOffset(const CHARACTER* c, vec3_t offset)
     }
 }
 
-bool DrawsAttachments(CHARACTER* c)
+bool DrawsAttachments(const CHARACTER* c)
 {
-    OBJECT* o = &c->Object;
+    const OBJECT* o = &c->Object;
     return !g_isCharacterBuff(o, eBuff_CrywolfNPCHide) && Models[o->Type].NumActions != 0;
 }
 
@@ -15866,7 +15914,7 @@ void PlanAttachments(CHARACTER* c)
 }
 } // namespace
 
-bool RenderCharacterBackItem(CHARACTER* c, OBJECT* o, bool bTranslate)
+bool RenderCharacterBackItem(const CHARACTER* c, const OBJECT* o, bool bTranslate)
 {
     const bool bBindBack = AreWeaponsOnBack(c, o);
 
@@ -15896,10 +15944,6 @@ bool RenderCharacterBackItem(CHARACTER* c, OBJECT* o, bool bTranslate)
 
             if (bBack && iType != -1)
             {
-                PART_t* w = &c->Wing;
-
-                float fAnimationFrameBackUp = w->AnimationFrame;
-
                 // Carried on the back bone, whatever the wing hangs from.
                 constexpr int backBone = 47;
                 PART_t t_Part = BackWeaponPart(c);
@@ -15920,8 +15964,6 @@ bool RenderCharacterBackItem(CHARACTER* c, OBJECT* o, bool bTranslate)
                     RenderLinkObject(0.f, 0.f, 15.f, c, &t_Part, iType, iLevel, iOption1, true, bTranslate, 0,
                                      bRightHandItem, backBone);
                 }
-
-                w->AnimationFrame = fAnimationFrameBackUp;
             }
 
             iBackupType = iType;
@@ -15935,7 +15977,7 @@ bool RenderCharacterBackItem(CHARACTER* c, OBJECT* o, bool bTranslate)
 
         if (gMapManager.InChaosCastle() == false)
         {
-            PART_t* w = &c->Wing;
+            const PART_t* w = &c->Wing;
             if (w->Type != -1)
             {
                 // Its bone is the one PrepareCarriedParts set.
@@ -15949,7 +15991,7 @@ bool RenderCharacterBackItem(CHARACTER* c, OBJECT* o, bool bTranslate)
             int iOption1 = 0;
             if (iType == MODEL_IMP)
             {
-                PART_t* w = &c->Helper;
+                const PART_t* w = &c->Helper;
                 iOption1 = w->ExcellentFlags;
                 vec3_t at;
                 ImpOffset(c, at);

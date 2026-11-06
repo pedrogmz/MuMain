@@ -17,10 +17,13 @@
 #include "UI/Widgets/UIBaseDef.h"
 #include "World/MapInfra/MapManager.h"
 #include "Audio/DSPlaySound.h"
+#include "GameLogic/Monsters/MonsterModelTimers.h"
+#include "GameLogic/Monsters/MonsterSoundEvents.h"
 
 #include "GameLogic/Items/ChangeRingManager.h"
 #include "Data/DataHandler/LoadData.h"
 #include "UI/Core/WindowSystem.h"
+#include "Render/Effects/EffectDraw.h"
 
 CTrapCanon g_TrapCanon;
 
@@ -160,7 +163,7 @@ bool M38Kanturu2nd::AttackEffect_Kanturu2nd_Monster(CHARACTER* c, OBJECT* o, BMD
     break;
     case MODEL_TRAP_CANON:
     {
-        g_TrapCanon.Render_AttackEffect(c, o, b);
+        g_TrapCanon.Spawn_AttackEffect(c, o, b);
         return true;
     }
     break;
@@ -169,30 +172,10 @@ bool M38Kanturu2nd::AttackEffect_Kanturu2nd_Monster(CHARACTER* c, OBJECT* o, BMD
     return false;
 }
 
-void M38Kanturu2nd::Sound_Kanturu2nd_Object(OBJECT* o)
-{
-    PlayBuffer(SOUND_KANTURU_2ND_MAPSOUND_GLOBAL);
-
-    switch (o->Type)
-    {
-    case 9:
-        PlayBuffer(SOUND_KANTURU_2ND_MAPSOUND_GEAR);
-        break;
-    case 31:
-    case 35:
-    case 36:
-    case 37:
-        PlayBuffer(SOUND_KANTURU_2ND_MAPSOUND_INCUBATOR);
-        break;
-    }
-}
-
 bool M38Kanturu2nd::Move_Kanturu2nd_Object(OBJECT* o)
 {
     if (!Is_Kanturu2nd())
         return false;
-
-    Sound_Kanturu2nd_Object(o);
 
     switch (o->Type)
     {
@@ -774,40 +757,7 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
     {
     case MODEL_PERSONA:
     {
-        if (o->CurrentAction == MONSTER01_WALK)
-        {
-            if (rand_fps_check(15))
-            {
-                PlayBuffer(static_cast<ESound>(SOUND_KANTURU_2ND_PERSO_MOVE1 + Random::Rand() % 2));
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_ATTACK1)
-        {
-            if (o->SubType == FALSE)
-            {
-                o->SubType = TRUE;
-                PlayBuffer(SOUND_KANTURU_2ND_PERSO_ATTACK1);
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_ATTACK2)
-        {
-            if (o->SubType == FALSE)
-            {
-                o->SubType = TRUE;
-                PlayBuffer(SOUND_KANTURU_2ND_PERSO_ATTACK2);
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_DIE)
-        {
-            o->SubType = TRUE;
-            PlayBuffer(SOUND_KANTURU_2ND_PERSO_DIE);
-        }
-
-        if (o->CurrentAction == MONSTER01_STOP1 || o->CurrentAction == MONSTER01_STOP2 ||
-            o->CurrentAction == MONSTER01_WALK)
-        {
-            o->SubType = FALSE;
-        }
+        GameLogic::Monsters::SoundEvents::PlayDrawn(*c);
 
         vec3_t vPos;
         vec3_t vLight = {1.0f, 1.0f, 1.0f};
@@ -889,41 +839,17 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
                 o->Distance = 0.1f;
         }
 
-        if (o->CurrentAction == MONSTER01_ATTACK1)
-        {
-            if (o->SubType == FALSE)
-            {
-                o->SubType = TRUE;
-                PlayBuffer(SOUND_KANTURU_2ND_TWIN_ATTACK1);
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_ATTACK2)
-        {
-            if (o->SubType == FALSE)
-            {
-                o->SubType = TRUE;
-                PlayBuffer(SOUND_KANTURU_2ND_TWIN_ATTACK2);
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_DIE)
-        {
-            o->SubType = TRUE;
-            PlayBuffer(SOUND_KANTURU_2ND_TWIN_DIE);
-        }
-
-        if (o->CurrentAction == MONSTER01_STOP1 || o->CurrentAction == MONSTER01_STOP2 ||
-            o->CurrentAction == MONSTER01_WALK)
-        {
-            o->SubType = FALSE;
-        }
+        // Its attacks and death; its walk sound comes with its hair below.
+        if (o->CurrentAction != MONSTER01_WALK)
+            GameLogic::Monsters::SoundEvents::PlayDrawn(*c);
 
         vec3_t vRelative, vPos;
         vec3_t vLight = {0.6f, 1.0f, 0.4f};
 
         if (o->CurrentAction == MONSTER01_WALK)
         {
-            DWORD dwTime = timeGetTime() - o->m_dwTime;
-            if (dwTime > 500)
+            // Its hair swings on its model's timer, with its walk sound (Q-MN91).
+            if (GameLogic::Monsters::ModelTimers::Ticked(*c, Data::Monsters::TwinTailHairSwingTimer))
             {
                 if (o->m_iAnimation % 2 == 1)
                 {
@@ -946,9 +872,7 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
                 {
                     o->m_iAnimation = 0;
                 }
-                o->m_dwTime = timeGetTime();
-
-                PlayBuffer(static_cast<ESound>(SOUND_KANTURU_2ND_TWIN_MOVE1 + Random::Rand() % 2));
+                GameLogic::Monsters::SoundEvents::PlayDrawn(*c);
             }
         }
         else if (o->CurrentAction == MONSTER01_DIE)
@@ -988,37 +912,7 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
                 o->Distance = 0.1f;
         }
 
-        if (o->CurrentAction == MONSTER01_WALK)
-        {
-            if (rand_fps_check(15))
-            {
-                PlayBuffer(static_cast<ESound>(SOUND_KANTURU_2ND_DRED_MOVE1 + Random::Rand() % 2));
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_ATTACK1)
-        {
-            if (o->SubType == FALSE)
-            {
-                o->SubType = TRUE;
-                PlayBuffer(SOUND_KANTURU_2ND_DRED_ATTACK1);
-            }
-        }
-        else if (o->CurrentAction == MONSTER01_ATTACK2 && (o->AnimationFrame >= 0 && o->AnimationFrame <= 2))
-        {
-            o->SubType = TRUE;
-            PlayBuffer(SOUND_KANTURU_2ND_DRED_ATTACK2);
-        }
-        else if (o->CurrentAction == MONSTER01_DIE)
-        {
-            o->SubType = TRUE;
-            PlayBuffer(SOUND_KANTURU_2ND_DRED_DIE);
-        }
-
-        if (o->CurrentAction == MONSTER01_STOP1 || o->CurrentAction == MONSTER01_STOP2 ||
-            o->CurrentAction == MONSTER01_WALK)
-        {
-            o->SubType = FALSE;
-        }
+        GameLogic::Monsters::SoundEvents::PlayDrawn(*c);
 
         vec3_t vPos, vLight;
         float fScale;
@@ -1070,7 +964,7 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
     {
         if (o->CurrentAction == KANTURU2ND_NPC_ANI_ROT)
         {
-            PlayBuffer(SOUND_KANTURU_2ND_MAPSOUND_HOLE);
+            GameLogic::Monsters::SoundEvents::PlayDrawn(*c);
 
             int iAnimationFrame = (int)o->AnimationFrame;
 
@@ -1204,14 +1098,14 @@ bool M38Kanturu2nd::Update_Kanturu2nd_MonsterEffects(CHARACTER* c, OBJECT* o, BM
     break;
     case MODEL_TRAP_CANON:
     {
-        g_TrapCanon.Render_Object_Visual(c, o, b);
+        g_TrapCanon.Spawn_Object_Visual(c, o, b);
     }
     break;
     }
     return false;
 }
 
-bool M38Kanturu2nd::Render_Kanturu2nd_MonsterVisual(CHARACTER* c, OBJECT* o, BMD* b)
+bool M38Kanturu2nd::Render_Kanturu2nd_MonsterVisual(const CHARACTER* c, const OBJECT* o, BMD* b)
 {
     switch (o->Type)
     {
@@ -1228,10 +1122,12 @@ bool M38Kanturu2nd::Render_Kanturu2nd_MonsterVisual(CHARACTER* c, OBJECT* o, BMD
             Light[2] = 0.0f;
 
             EnableAlphaBlend();
-            RenderTerrainAlphaBitmap(BITMAP_ENERGY_RING, o->Position[0], o->Position[1], Scale, Scale, Light, Angle);
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_ENERGY_RING, o->Position[0], o->Position[1], Scale, Scale, Light, Angle));
 
             Vector(0.5f, 0.5f, 0.1f, Light);
-            RenderTerrainAlphaBitmap(BITMAP_ENERGY_FIELD, o->Position[0], o->Position[1], 2.0f, 2.0f, Light, Angle);
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_ENERGY_FIELD, o->Position[0], o->Position[1], 2.0f, 2.0f, Light, Angle));
         }
         break;
     case MODEL_DREADFEAR:
@@ -1247,10 +1143,12 @@ bool M38Kanturu2nd::Render_Kanturu2nd_MonsterVisual(CHARACTER* c, OBJECT* o, BMD
             Light[2] = 0.0f;
 
             EnableAlphaBlend();
-            RenderTerrainAlphaBitmap(BITMAP_ENERGY_RING, o->Position[0], o->Position[1], Scale, Scale, Light, Angle);
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_ENERGY_RING, o->Position[0], o->Position[1], Scale, Scale, Light, Angle));
 
             Vector(1.0f, 0.3f, 0.1f, Light);
-            RenderTerrainAlphaBitmap(BITMAP_ENERGY_FIELD, o->Position[0], o->Position[1], 2.0f, 2.0f, Light, Angle);
+            Render::EffectDrawing::ActiveEffectDrawer().DrawDecal(Render::EffectDrawing::Decal(
+                BITMAP_ENERGY_FIELD, o->Position[0], o->Position[1], 2.0f, 2.0f, Light, Angle));
         }
         break;
     }
@@ -1431,7 +1329,7 @@ void CTrapCanon::Render_Object(const OBJECT* o, DrawLook& look, BMD* b)
     b->RenderMesh(2, RENDER_TEXTURE | RENDER_BRIGHT, look.alpha, 2, fLumi, look.blendMeshU, look.blendMeshV);
 }
 
-void CTrapCanon::Render_Object_Visual(CHARACTER* c, OBJECT* o, BMD* b)
+void CTrapCanon::Spawn_Object_Visual(CHARACTER* c, OBJECT* o, BMD* b)
 {
     if (c->AttackTime < 1)
     {
@@ -1454,7 +1352,7 @@ void CTrapCanon::Render_Object_Visual(CHARACTER* c, OBJECT* o, BMD* b)
     }
 }
 
-void CTrapCanon::Render_AttackEffect(CHARACTER* c, OBJECT* o, BMD* b)
+void CTrapCanon::Spawn_AttackEffect(CHARACTER* c, OBJECT* o, BMD* b)
 {
     if (c->CheckAttackTime(1))
     {

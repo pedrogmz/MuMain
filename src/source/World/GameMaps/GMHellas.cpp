@@ -26,6 +26,7 @@
 #include "Camera/CameraProjection.h"
 #include "I18N/All.h"
 #include "Render/Text/CUIRenderText.h"
+#include "Render/Drawing/LegacyCalls.h"
 
 extern  int  WaterTextureNumber;
 
@@ -89,9 +90,10 @@ void MoveWaterTerrain(void)
 
 bool RenderWaterTerrain(void)
 {
+    if (Render::Drawing::RecordsLegacyCall(Render::Drawing::LegacyCall::RenderWaterTerrain))
+        return g_pCSWaterTerrain != NULL;
     if (g_pCSWaterTerrain != NULL)
     {
-        g_pCSWaterTerrain->Update();
         g_pCSWaterTerrain->Render();
         return true;
     }
@@ -203,7 +205,7 @@ bool GetUseLostMap(bool bDrawAlert)
     return false;
 }
 
-int RenderHellasItemInfo(ITEM* ip, int textNum)
+int RenderHellasItemInfo(const ITEM* ip, int textNum)
 {
     int TextNum = textNum;
     switch (ip->Type)
@@ -477,7 +479,6 @@ bool UpdateHellasObjectEffects(OBJECT* o, BMD* b)
         Vector(1.f, 1.f, 1.f, Light);
         CreateParticleFpsChecked(BITMAP_WATERFALL_5, o->Position, o->Angle, Light, 0);
         o->Scale = 0.5f;
-        PlayBuffer(SOUND_KALIMA_WATER_FALL);
         break;
     case 38:
         Vector(1.f, 1.f, 1.f, Light);
@@ -485,7 +486,6 @@ bool UpdateHellasObjectEffects(OBJECT* o, BMD* b)
         {
             CreateParticle(BITMAP_WATERFALL_1, o->Position, o->Angle, Light, 0);
         }
-        PlayBuffer(SOUND_KALIMA_WATER_FALL);
         o->Scale = 0.5f;
         break;
     case 39:
@@ -730,7 +730,7 @@ static void UpdateDestroy_Def(OBJECT* o, BMD* b)
         if (o->AI == ACTION_DESTROY_WIZ_DEF)
         {
             SkinObjectMeshes(o, b, true);
-            b->RenderMeshEffect(6, MODEL_STONE_COFFIN, 1);
+            b->SpawnMeshEffects(6, MODEL_STONE_COFFIN, 1);
             o->AI = 0;
 
             PlayBuffer(SOUND_HIT_CRISTAL);
@@ -738,7 +738,7 @@ static void UpdateDestroy_Def(OBJECT* o, BMD* b)
         else if (o->AI == ACTION_DESTROY_DEF)
         {
             SkinObjectMeshes(o, b, true);
-            b->RenderMeshEffect(6, MODEL_STONE_COFFIN, 2);
+            b->SpawnMeshEffects(6, MODEL_STONE_COFFIN, 2);
             o->AI = 0;
 
             PlayBuffer(SOUND_HIT_CRISTAL);
@@ -881,7 +881,7 @@ void UpdateHellasObjectMeshEffects(OBJECT* o, BMD* b)
         if (o->CurrentAction == MONSTER01_DIE && o->Alpha < 0.5f)
         {
             SkinObjectMeshes(o, b, true);
-            b->RenderMeshEffect(0, BITMAP_BUBBLE);
+            b->SpawnMeshEffects(0, BITMAP_BUBBLE);
         }
         if ((o->Type == MODEL_DEATH_CENTURION && o->SubType == 9) || o->Type == MODEL_SHRIKER)
         {
@@ -1038,6 +1038,8 @@ CHARACTER* CreateHellasMonster(EMonsterType Type, int PositionX, int PositionY, 
         o = &c->Object;
         wcscpy(c->ID, L"진짜쿤둔");
         o->LifeTime = 100;
+        break;
+    default:
         break;
     }
 
@@ -1356,6 +1358,8 @@ bool AttackEffect_HellasMonster(CHARACTER* c, CHARACTER* tc, OBJECT* o, OBJECT* 
             break;
         }
         return true;
+    default:
+        break;
     }
     return false;
 }
@@ -1973,7 +1977,7 @@ bool UpdateHellasMonsterEffects(CHARACTER* c, OBJECT* o, BMD* b)
     return false;
 }
 
-bool RenderHellasMonsterCloth(CHARACTER* c, OBJECT* o, bool Translate, int Select)
+bool RenderHellasMonsterCloth(const CHARACTER* c, const OBJECT* o, bool Translate, int Select)
 {
     return false;
 }

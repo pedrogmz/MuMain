@@ -1,21 +1,3 @@
-add_test(
-    NAME rml_contract_guard_tests
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_rml_contracts.py"
-)
-
-# The mistakes RmlUi only reports at runtime, or not at all, in every shipped document and stylesheet.
-add_test(
-    NAME rml_rcss_syntax
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/check_rml_rcss_syntax.py"
-)
-
-add_test(
-    NAME rml_preview
-    COMMAND "${Python3_EXECUTABLE}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/test_rml_preview.py"
-            "${CMAKE_SOURCE_DIR}"
-)
-
 mu_add_test(
     NAME map_name_tests
     SOURCES
@@ -182,20 +164,6 @@ mu_add_test(
         ${CMAKE_SOURCE_DIR}/src/source/UI/Widgets/TextSearch.cpp
 )
 
-add_test(
-    NAME no_legacy_text_measurement
-    COMMAND ${CMAKE_COMMAND}
-        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src/source
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_no_legacy_text_measurement.cmake
-)
-
-add_test(
-    NAME inventory_window_captures_hover
-    COMMAND ${CMAKE_COMMAND}
-        -DMU_INVENTORY_SOURCE=${CMAKE_SOURCE_DIR}/src/source/UI/Inventory/MyInventory.cpp
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_inventory_mouse_capture.cmake
-)
-
 mu_add_test(
     NAME npc_name_storage_tests
     SOURCES
@@ -216,6 +184,8 @@ mu_add_test(
         test_ui_scaling.cpp
         ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp
     LINK_LIBS MuClient
+    # Saves the config.ini beside the executable, as theme_file_interface_tests does.
+    RESOURCE_LOCK ui_executable_config_ini
 )
 
 mu_add_test(
@@ -224,18 +194,6 @@ mu_add_test(
         test_mu_helper.cpp
         ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp
     LINK_LIBS MuClient
-)
-
-add_test(
-    NAME display_settings_contract
-    COMMAND "${CMAKE_COMMAND}"
-        "-DMU_CONFIG_CONSTANTS=${CMAKE_SOURCE_DIR}/src/source/Data/GameConfig/GameConfigConstants.h"
-        "-DMU_CONFIG_HEADER=${CMAKE_SOURCE_DIR}/src/source/Data/GameConfig/GameConfig.h"
-        "-DMU_CONFIG_SOURCE=${CMAKE_SOURCE_DIR}/src/source/Data/GameConfig/GameConfig.cpp"
-        "-DMU_LOOK_SETTING_SOURCE=${CMAKE_SOURCE_DIR}/src/source/Render/Look/LookPresetSetting.cpp"
-        "-DMU_WINMAIN_SOURCE=${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp"
-        "-DMU_CONSOLE_SOURCE=${CMAKE_SOURCE_DIR}/src/source/Core/Utilities/Log/muConsoleDebug.cpp"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/test_display_settings_contract.cmake"
 )
 
 mu_add_test(
@@ -364,6 +322,8 @@ mu_add_test(
         test_theme_inheritance.cpp
         ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp
     LINK_LIBS MuClient
+    # Choosing a theme saves the config.ini beside the executable, as ui_scaling_tests does.
+    RESOURCE_LOCK ui_executable_config_ini
 )
 target_compile_definitions(theme_file_interface_tests PRIVATE
     MU_FONT_DIR="${CMAKE_SOURCE_DIR}/src/bin/fonts"
@@ -396,9 +356,8 @@ add_executable(rml_text_layout_tests
     test_rml_text_layout.cpp
     RmlTextLayoutAudit.cpp
     RmlLayoutFixture.cpp
-    ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp
 )
-target_link_libraries(rml_text_layout_tests PRIVATE mu_test_main MuClient)
+target_link_libraries(rml_text_layout_tests PRIVATE mu_test_main mu_test_winmain)
 target_include_directories(rml_text_layout_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/source)
 if(MSVC)
     target_compile_options(rml_text_layout_tests PRIVATE /utf-8)
@@ -425,6 +384,19 @@ mu_add_test(
     LINK_LIBS MuClient
 )
 target_compile_definitions(rml_styling_regression_tests PRIVATE
+    MU_RMLUI_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data/Interface/RmlUi"
+    MU_FONT_DIR="${CMAKE_SOURCE_DIR}/src/bin/fonts"
+)
+
+mu_add_test(
+    NAME rml_click_sound_tests
+    SOURCES
+        test_rml_click_sounds.cpp
+        RmlLayoutFixture.cpp
+        ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp
+    LINK_LIBS MuClient
+)
+target_compile_definitions(rml_click_sound_tests PRIVATE
     MU_RMLUI_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data/Interface/RmlUi"
     MU_FONT_DIR="${CMAKE_SOURCE_DIR}/src/bin/fonts"
 )

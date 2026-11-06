@@ -79,27 +79,11 @@ MonsterModelDefinition FullModel()
     model.headBone = 16;
     model.streamMesh = 1;
     model.noneBlendMeshes = {0, 3};
-    model.sounds = {{"Data/Sound/mDarkKnight1.wav", "SOUND_MONSTER_DARKKNIGHT1", 2, true},
-                    {"Data/Sound/mDarkKnightDie.wav", "", 1, false}};
-    Data::Monsters::MonsterSoundSlots slots;
-    slots.first = {"SOUND_MONSTER_DARKKNIGHT1", "SOUND_MONSTER_DARKKNIGHT1", "", "", "Data/Sound/mDarkKnightDie.wav"};
-    slots.second = Data::Monsters::MonsterSoundSlotSet{"a", "b", "c", "d", "e"};
-    model.soundSlots = slots;
-    Data::Monsters::MonsterSoundEvent walk;
-    walk.animations = {MONSTER01_WALK};
-    walk.frames = std::pair<float, float>{7.0f, 8.0f};
-    walk.sounds = {"SOUND_MONSTER_DARKKNIGHT1"};
-    Data::Monsters::MonsterSoundEvent breath;
-    breath.animations = {MONSTER01_STOP1, MONSTER01_STOP2};
-    breath.chance = Data::Monsters::MonsterSoundChance{100, Data::Monsters::MonsterSoundDraw::Rand};
-    breath.pick = Data::Monsters::MonsterSoundDraw::RandFps;
-    breath.sounds = {"SOUND_MONSTER_DARKKNIGHT1", "Data/Sound/mDarkKnightDie.wav"};
-    Data::Monsters::MonsterSoundEvent die;
-    die.animations = {MONSTER01_DIE};
-    die.deathEffectArmed = true;
-    die.sounds = {"Data/Sound/mDarkKnightDie.wav", "SOUND_MONSTER_DARKKNIGHT1"};
-    model.soundEvents = {walk, breath, die};
-    model.soundEventMaps = {{69}, {70, 2}};
+    // Not in frame order: the cues keep the file's order.
+    model.cues = {{"step 2", MONSTER01_WALK, {7.0f, 7.5f}},
+                  {"step 1", MONSTER01_WALK, {1.0f, 2.0f}},
+                  {"swing", MONSTER01_ATTACK1, {3.25f, 4.0f}}};
+    model.timers = {{"hair swing", MONSTER01_WALK, 500}, {"blink", MONSTER01_STOP1, 2000}};
     model.bitmaps = {{"Monster/bv01_2.jpg", "BITMAP_MONSTER_SKIN", true, true}, {"Monster/iui02.tga", "BITMAP_ROBE+3"}};
     Data::Monsters::MonsterModelPart part;
     part.effect = "totemGolemPart1";
@@ -140,10 +124,7 @@ TEST_CASE("Monster models: the writer sorts by slot and puts short values on one
     hound.load.textureFolders = {"Monster"};
     hound.load.speeds = {{MONSTER01_WALK, 0.7f}};
     hound.headBone = 5;
-    hound.sounds = {{"Data/Sound/mHound1.wav", "SOUND_MONSTER_HOUND1", 2, true}};
-    Data::Monsters::MonsterSoundSlots slots;
-    slots.first = {"SOUND_MONSTER_HOUND1", "SOUND_MONSTER_HOUND1", "", "", ""};
-    hound.soundSlots = slots;
+    hound.cues = {{"step 1", MONSTER01_WALK, {1.0f, 2.0f}}, {"step 2", MONSTER01_WALK, {7.0f, 8.5f}}};
     MonsterModelDefinition smith;
     smith.slot = "MODEL_SMITH";
     smith.load.file = "Data/NPC/Smith01.bmd";
@@ -151,7 +132,7 @@ TEST_CASE("Monster models: the writer sorts by slot and puts short values on one
 
     const std::string text = Data::Monsters::WriteMonsterModelsJson(std::vector<MonsterModelDefinition>{smith, hound});
     CHECK(text == R"({
-  "formatVersion": 1,
+  "formatVersion": 2,
   "models": [
     {
       "slot": "MONSTER_MODEL_HOUND",
@@ -159,14 +140,10 @@ TEST_CASE("Monster models: the writer sorts by slot and puts short values on one
       "textureFolders": ["Monster"],
       "animations": {"walk": 0.7},
       "headBone": 5,
-      "sounds": [
-        {"file": "Data/Sound/mHound1.wav", "id": "SOUND_MONSTER_HOUND1", "channels": 2, "spatial": true}
-      ],
-      "soundSlots": {
-        "idle": ["SOUND_MONSTER_HOUND1", "SOUND_MONSTER_HOUND1"],
-        "attack": [null, null],
-        "die": null
-      }
+      "cues": [
+        {"name": "step 1", "animation": "walk", "frames": [1, 2]},
+        {"name": "step 2", "animation": "walk", "frames": [7, 8.5]}
+      ]
     },
     {
       "slot": "MODEL_SMITH",
@@ -178,59 +155,24 @@ TEST_CASE("Monster models: the writer sorts by slot and puts short values on one
 )");
 }
 
-TEST_CASE("Monster models: each sound event is written on a line of its own [data][monsters]")
+TEST_CASE("Monster models: the sound fields of a model are fatal, the sounds are in Sounds.json (Q-MN78) "
+          "[data][monsters]")
 {
-    MonsterModelDefinition model;
-    model.slot = "MONSTER_MODEL_HOUND";
-    model.load.file = "Data/Monster/Monster02.bmd";
-    model.load.textureFolders = {"Monster"};
-    Data::Monsters::MonsterSoundEvent walk;
-    walk.animations = {MONSTER01_WALK};
-    walk.frames = std::pair<float, float>{1.0f, 2.5f};
-    walk.sounds = {"SOUND_KARUTAN_ORCUS_MOVE1"};
-    Data::Monsters::MonsterSoundEvent attack;
-    attack.animations = {MONSTER01_ATTACK1, MONSTER01_ATTACK2};
-    attack.chance = Data::Monsters::MonsterSoundChance{3, Data::Monsters::MonsterSoundDraw::RandFps};
-    attack.pick = Data::Monsters::MonsterSoundDraw::Rand;
-    attack.sounds = {"SOUND_KARUTAN_ORCUS_ATTACK1", "SOUND_KARUTAN_ORCUS_ATTACK2"};
-    model.soundEvents = {walk, attack};
-    model.soundEventMaps = {{80}, {81}};
-
-    const std::string text = Data::Monsters::WriteMonsterModelsJson(std::vector<MonsterModelDefinition>{model});
-    CHECK(text.find(R"(      "soundEvents": [
-        {"animations": ["walk"], "frames": [1, 2.5], "sounds": ["SOUND_KARUTAN_ORCUS_MOVE1"]},
-        {"animations": ["attack1", "attack2"], "chance": {"oneIn": 3, "draw": "randFps"}, "pick": "rand", "sounds": ["SOUND_KARUTAN_ORCUS_ATTACK1", "SOUND_KARUTAN_ORCUS_ATTACK2"]}
-      ],
-      "soundEventMaps": [80, 81])") != std::string::npos);
-    INFO(text);
-    const ReadResult read = Read(text);
-    INFO(Messages(read.issues));
-    CHECK(read.issues.empty());
-    REQUIRE(read.models.size() == 1);
-    CHECK(read.models[0] == model);
-}
-
-TEST_CASE("Monster models: a sound event names a sound of the model or a SOUND_ id [data][monsters]")
-{
-    MonsterModelDefinition model;
-    model.slot = "MONSTER_MODEL_HOUND";
-    model.load.file = "Data/Monster/Monster02.bmd";
-    model.load.textureFolders = {"Monster"};
-    model.sounds = {{"Data/Sound/mHound1.wav", "", 2, true}};
-    Data::Monsters::MonsterSoundEvent event;
-    event.animations = {MONSTER01_ATTACK1};
-    // The model's sound by its file, an id the data can name, and neither.
-    event.sounds = {"Data/Sound/mHound1.wav", "SOUND_EMPIREGUARDIAN_JERINT_MONSTER_MOVE01", "Data/Sound/mNobody.wav"};
-    model.soundEvents = {event};
-    std::vector<ItemDataIssue> issues;
-
-    Data::Monsters::ValidateMonsterModelNames(std::vector<MonsterModelDefinition>{model}, "Models.json", issues);
-
-    INFO(Messages(issues));
-    REQUIRE(issues.size() == 1);
-    CHECK(issues[0].severity == ItemDataIssueSeverity::Fatal);
-    CHECK(issues[0].field == "model MONSTER_MODEL_HOUND soundEvents[0].sounds[2]");
-    CHECK(issues[0].message.find("is no sound of the model") != std::string::npos);
+    for (const std::string field : {R"("sounds": [{"file": "Data/Sound/a.wav"}])",
+                                    R"("soundSlots": {"idle": ["a", "b"], "attack": [null, null], "die": null})",
+                                    R"("soundEvents": [{"on": ["hit"], "sounds": ["a"]}])", R"("soundEventMaps": [69])",
+                                    R"("soundEventWorlds": [56])"})
+    {
+        const ReadResult read = Read(ModelsFile(Model("MONSTER_MODEL_HOUND", field)));
+        const std::string key = field.substr(1, field.find('"', 1) - 1);
+        INFO(field);
+        INFO(Messages(read.issues));
+        CHECK(read.models.empty());
+        CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Fatal, "model MONSTER_MODEL_HOUND " + key,
+                            "sounds are in the sound sets of Sounds.json"));
+        // Not also an unknown key.
+        CHECK(read.issues.size() == 1);
+    }
 }
 
 TEST_CASE("Monster models: a speed is written as the shortest text that reads back the same [data][monsters]")
@@ -273,10 +215,6 @@ TEST_CASE("Monster models: wrong values are errors that name the model and the f
          "0 or more"},
         {Model("MONSTER_MODEL_HOUND", R"("holdLastFrame": ["die", "die"])"), "model MONSTER_MODEL_HOUND holdLastFrame",
          "more than once"},
-        {Model("MONSTER_MODEL_HOUND", R"("sounds": [{"file": "Data/Sound/a.wav", "channels": 5}])"),
-         "model MONSTER_MODEL_HOUND sounds[0].channels", "1 to 4"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundSlots": {"idle": ["a"], "attack": [null, null], "die": null})"),
-         "model MONSTER_MODEL_HOUND soundSlots.idle", "two sounds"},
         {Model("MONSTER_MODEL_HOUND", R"("textureNames": {"0": "a_name_that_is_longer_than_thirty_one.jpg"})"),
          "model MONSTER_MODEL_HOUND textureNames.0", "at most 31"},
         {Model("MONSTER_MODEL_HOUND", R"("bitmaps": [{"file": "Monster/a.jpg", "slot": "X", "wrap": "mirror"}])"),
@@ -290,30 +228,48 @@ TEST_CASE("Monster models: wrong values are errors that name the model and the f
         {Model("MONSTER_MODEL_HOUND", R"("boundingBox": {"min": [0, 0]})"), "model MONSTER_MODEL_HOUND boundingBox.min",
          "three numbers"},
         {Model("MONSTER_MODEL_HOUND", R"("headBone": 1.5)"), "model MONSTER_MODEL_HOUND headBone", "whole number"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEvents": [{"sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0]", "animations and sounds"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEvents": [{"animations": [], "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].animations", "one animation or more"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEvents": [{"animations": ["walk"], "sounds": []}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].sounds", "one sound or more"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": {"step 1": [1, 2]})"), "model MONSTER_MODEL_HOUND cues",
+         "list of cues"},
+        // The model timers (Q-MN91).
+        {Model("MONSTER_MODEL_HOUND", R"("timers": {"hair swing": 500})"), "model MONSTER_MODEL_HOUND timers",
+         "4 timers or fewer"},
         {Model("MONSTER_MODEL_HOUND",
-               R"("soundEvents": [{"animations": ["walk"], "frames": [8, 7], "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].frames", "first below the second"},
+               R"("timers": [{"name": "a", "animation": "walk", "everyMs": 1}, {"name": "b", "animation": "walk", )"
+               R"("everyMs": 1}, {"name": "c", "animation": "walk", "everyMs": 1}, {"name": "d", "animation": )"
+               R"("walk", "everyMs": 1}, {"name": "e", "animation": "walk", "everyMs": 1}])"),
+         "model MONSTER_MODEL_HOUND timers", "4 timers or fewer"},
+        {Model("MONSTER_MODEL_HOUND", R"("timers": [{"name": "hair swing", "animation": "walk"}])"),
+         "model MONSTER_MODEL_HOUND timers[0]", "name, animation and everyMs"},
+        {Model("MONSTER_MODEL_HOUND", R"("timers": [{"name": "hair swing", "animation": "jump", "everyMs": 500}])"),
+         "model MONSTER_MODEL_HOUND timers[0].animation", "not an animation"},
+        {Model("MONSTER_MODEL_HOUND", R"("timers": [{"name": "hair swing", "animation": "walk", "everyMs": 0}])"),
+         "model MONSTER_MODEL_HOUND timers[0].everyMs", "from 1 to 60000"},
+        {Model("MONSTER_MODEL_HOUND", R"("timers": [{"name": "hair swing", "animation": "walk", "everyMs": 60001}])"),
+         "model MONSTER_MODEL_HOUND timers[0].everyMs", "from 1 to 60000"},
+        {Model("MONSTER_MODEL_HOUND", R"("timers": [{"name": "a", "animation": "walk", "everyMs": 5}, )"
+                                      R"({"name": "a", "animation": "stop1", "everyMs": 5}])"),
+         "model MONSTER_MODEL_HOUND timers[1].name", "another timer"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "step 1", "frames": [1, 2]}])"),
+         "model MONSTER_MODEL_HOUND cues[0]", "name, animation and frames"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "", "animation": "walk", "frames": [1, 2]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].name", "must be a text"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "step 1", "animation": "jump", "frames": [1, 2]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].animation", "not an animation"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "step 1", "animation": "walk", "frames": [8, 7]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].frames", "first below the second"},
+        // Two numbers that are one float: the cue would never play.
         {Model("MONSTER_MODEL_HOUND",
-               R"("soundEvents": [{"animations": ["walk"], "chance": {"oneIn": 0, "draw": "rand"}, "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].chance.oneIn", "1 to 100000"},
-        {Model("MONSTER_MODEL_HOUND",
-               R"("soundEvents": [{"animations": ["walk"], "chance": {"oneIn": 2, "draw": "dice"}, "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].chance.draw", "randFps or rand"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEvents": [{"animations": ["walk"], "pick": "rand", "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].sounds", "two sounds with pick"},
-        {Model("MONSTER_MODEL_HOUND",
-               R"("soundEvents": [{"animations": ["die"], "deathEffectArmed": 1, "sounds": ["a"]}])"),
-         "model MONSTER_MODEL_HOUND soundEvents[0].deathEffectArmed", "true or false"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEventMaps": [69, -1])"), "model MONSTER_MODEL_HOUND soundEventMaps[1]",
-         "from 0 to 255"},
-        {Model("MONSTER_MODEL_HOUND", R"("soundEventMaps": [{"map": 9, "stage": 256}])"),
-         "model MONSTER_MODEL_HOUND soundEventMaps[0]", "\"stage\": 1 to 255"},
+               R"("cues": [{"name": "step 1", "animation": "walk", "frames": [1.00000001, 1.00000002]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].frames", "first below the second"},
+        // A frame past the floats' range.
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "step 1", "animation": "walk", "frames": [1, 1e300]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].frames", "first below the second"},
+        {Model("MONSTER_MODEL_HOUND", R"("cues": [{"name": "step 1", "animation": "walk", "frames": [-1, 2]}])"),
+         "model MONSTER_MODEL_HOUND cues[0].frames", "first below the second"},
+        {Model(
+             "MONSTER_MODEL_HOUND",
+             R"("cues": [{"name": "step", "animation": "walk", "frames": [1, 2]}, {"name": "step", "animation": "walk", "frames": [7, 8]}])"),
+         "model MONSTER_MODEL_HOUND cues[1].name", "the name of another cue"},
     };
     for (const Case& test : cases)
     {
@@ -336,6 +292,32 @@ TEST_CASE("Monster models: a slot must be a model slot of the monster area and b
     CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Fatal, "model MONSTER_MODEL_HOUND slot", "more than once"));
 }
 
+// Twintail's map code asks its model for the hair swing timer by name: a model
+// list where it is renamed or gone says so, while the game runs without it.
+TEST_CASE("Monster models: a model without the timer the game's code asks for is an error [data][monsters]")
+{
+    MonsterModelDefinition twinTail;
+    twinTail.slot = "MONSTER_MODEL_TWIN_TAIL";
+    twinTail.timers = {{std::string(Data::Monsters::TwinTailHairSwingTimer), MONSTER01_WALK, 500}};
+    std::vector<ItemDataIssue> issues;
+    Data::Monsters::ValidateMonsterModelNames({&twinTail, 1}, "Models.json", issues);
+    CHECK(issues.empty());
+
+    twinTail.timers[0].name = "hair";
+    Data::Monsters::ValidateMonsterModelNames({&twinTail, 1}, "Models.json", issues);
+    REQUIRE(issues.size() == 1);
+    CHECK(issues[0].severity == ItemDataIssueSeverity::Error);
+    CHECK(issues[0].field == "model MONSTER_MODEL_TWIN_TAIL timers");
+    CHECK(issues[0].message.find("\"hair swing\"") != std::string::npos);
+
+    // Another model asks for no timer.
+    issues.clear();
+    MonsterModelDefinition hound;
+    hound.slot = "MONSTER_MODEL_HOUND";
+    Data::Monsters::ValidateMonsterModelNames({&hound, 1}, "Models.json", issues);
+    CHECK(issues.empty());
+}
+
 TEST_CASE("Monster models: both weapons may hang on one bone [data][monsters]")
 {
     const ReadResult read = Read(ModelsFile(Model("MONSTER_MODEL_ORC_ARCHER", R"("linkBones": [39, 39])")));
@@ -349,12 +331,12 @@ TEST_CASE("Monster models: unknown fields are warnings and are ignored [data][mo
 {
     const ReadResult read = Read(ModelsFile(Model(
         "MONSTER_MODEL_HOUND",
-        R"("scale": 1, "sounds": [{"file": "Data/Sound/a.wav", "volume": 1}], "parts": [{"effect": "x", "file": "Data/Monster/p.bmd", "textureFolders": ["Monster"], "speed": 1}])")));
+        R"("scale": 1, "cues": [{"name": "step 1", "animation": "walk", "frames": [1, 2], "volume": 1}], "parts": [{"effect": "x", "file": "Data/Monster/p.bmd", "textureFolders": ["Monster"], "speed": 1}])")));
     INFO(Messages(read.issues));
     CHECK_FALSE(HasFatal(read.issues));
     REQUIRE(read.models.size() == 1);
     CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Warning, "model MONSTER_MODEL_HOUND scale", "unknown"));
-    CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Warning, "model MONSTER_MODEL_HOUND sounds[0].volume",
+    CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Warning, "model MONSTER_MODEL_HOUND cues[0].volume",
                         "unknown"));
     CHECK(HasIssueAbout(read.issues, ItemDataIssueSeverity::Warning, "model MONSTER_MODEL_HOUND parts[0].speed",
                         "unknown"));
@@ -371,7 +353,6 @@ TEST_CASE("Monster models: the map lists' old names are fatal with their new nam
     const std::vector<Case> cases = {
         {R"("worldTextureFolders": [{"worlds": [18], "folders": ["NPC"]}])",
          "model MONSTER_MODEL_HOUND worldTextureFolders", "mapTextureFolders"},
-        {R"("soundEventWorlds": [56])", "model MONSTER_MODEL_HOUND soundEventWorlds", "soundEventMaps"},
         {R"("parts": [{"effect": "x", "file": "Data/Monster/p.bmd", "textureFolders": ["Monster"], "worlds": [24]}])",
          "model MONSTER_MODEL_HOUND parts[0].worlds", "maps"},
     };
@@ -396,8 +377,9 @@ TEST_CASE("Monster models: the slots of the monster and NPC ranges have names [d
     CHECK_FALSE(Data::Monsters::FindMonsterModelSlot("MODEL_PLAYER"));
     CHECK_FALSE(Data::Monsters::FindMonsterModelSlot("MODEL_HOUND"));
 
-    for (int slot = MODEL_MONSTER01; slot < MODEL_MONSTER01 + MONSTER_MODEL_COUNT; ++slot)
+    for (int type = 0; type < MONSTER_MODEL_COUNT; ++type)
     {
+        const int slot = MODEL_MONSTER01 + type;
         CHECK(Data::Monsters::FindMonsterModelSlot(Data::Monsters::GetMonsterModelSymbol(slot)) == slot);
     }
     for (int slot = MODEL_NPC_BEGIN + 1; slot < MODEL_NPC_END; ++slot)

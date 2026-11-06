@@ -3,6 +3,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "Data/DataHandler/DataFileIO.h"
+#include "Core/Utilities/FileHandle.h"
 #include "Core/Utilities/Random.h"
 #include "Core/Utilities/DrawSpawnCheck.h"
 #ifdef __APPLE__
@@ -54,6 +56,7 @@
 #include "Camera/ConvexHull2D.h"
 #include "Engine/Object/CullingConstants.h"
 #include "UI/Scaling/UITransform.h"
+#include "Render/Drawing/LegacyCalls.h"
 
 // DevEditor function declarations
 #ifdef _EDITOR
@@ -148,8 +151,8 @@ void ExitProgram()
 
 int OpenTerrainAttribute(wchar_t* FileName)
 {
-    FILE* fp = _wfopen(FileName, L"rb");
-    if (fp == NULL)
+    Core::Utilities::FileHandle file(_wfopen(FileName, L"rb"));
+    if (!file)
     {
         wchar_t Text[256];
         mu_swprintf(Text, L"%ls file not found.", FileName);
@@ -160,23 +163,25 @@ int OpenTerrainAttribute(wchar_t* FileName)
         return (-1);
     }
     // Read file data
-    fseek(fp, 0, SEEK_END);
-    long file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    auto* file_data = new unsigned char[file_size];
-    fread(file_data, file_size, 1, fp);
+    std::optional<std::vector<BYTE>> file_data = DataFileIO::ReadAll(file.get());
+    file.reset();
+    if (!file_data)
+    {
+        DataFileIO::ReportUnusableFile(FileName, L"File corrupted.");
+        return (-1);
+    }
+    const int file_size = static_cast<int>(file_data->size());
 
     // Decrypt file data
-    int iSize = MapFileDecrypt(NULL, file_data, file_size);
-    auto* decrypted_data = new unsigned char[iSize];
-    MapFileDecrypt(decrypted_data, file_data, file_size);
-    delete[] file_data;
+    int iSize = MapFileDecrypt(NULL, file_data->data(), file_size);
+    std::vector<unsigned char> decrypted(static_cast<std::size_t>(iSize));
+    unsigned char* decrypted_data = decrypted.data();
+    MapFileDecrypt(decrypted_data, file_data->data(), file_size);
 
     // Check file size
     bool extAtt = false;
     if (iSize != (TERRAIN_SIZE * TERRAIN_SIZE + 4) && iSize != (TERRAIN_SIZE * TERRAIN_SIZE * sizeof(WORD) + 4))
     {
-        delete[] decrypted_data;
         return (-1);
     }
     if (iSize == (TERRAIN_SIZE * TERRAIN_SIZE * sizeof(WORD) + 4))
@@ -207,7 +212,6 @@ int OpenTerrainAttribute(wchar_t* FileName)
         memcpy(TerrainWall, &decrypted_data[4], TERRAIN_SIZE * TERRAIN_SIZE * sizeof(WORD));
     }
 
-    delete[] decrypted_data;
     ++s_terrainHeightVersion;
 
     // Check file header
@@ -250,7 +254,6 @@ int OpenTerrainAttribute(wchar_t* FileName)
         return (-1);
     }
 
-    fclose(fp);
     return iMap;
 }
 
@@ -345,23 +348,24 @@ void SetTerrainWaterState(std::list<int>& terrainIndex, int state)
 
 int OpenTerrainMapping(wchar_t* FileName) {
     InitTerrainMappingLayer();
-    FILE* fp = _wfopen(FileName, L"rb");
-    if (fp == NULL) {
+    Core::Utilities::FileHandle file(_wfopen(FileName, L"rb"));
+    if (!file)
+    {
         return -1;
     }
 
-    fseek(fp, 0, SEEK_END);
-    int EncBytes = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    std::optional<std::vector<BYTE>> EncData = DataFileIO::ReadAll(file.get());
+    file.reset();
+    if (!EncData || EncData->empty())
+    {
+        return -1;
+    }
+    const int EncBytes = static_cast<int>(EncData->size());
 
-    auto* EncData = new unsigned char[EncBytes];
-    fread(EncData, 1, EncBytes, fp);
-    fclose(fp);
-
-    int DataBytes = MapFileDecrypt(NULL, EncData, EncBytes);
-    auto* Data = new unsigned char[DataBytes];
-    MapFileDecrypt(Data, EncData, EncBytes);
-    delete[] EncData;
+    int DataBytes = MapFileDecrypt(NULL, EncData->data(), EncBytes);
+    std::vector<unsigned char> Decrypted(static_cast<std::size_t>(DataBytes));
+    unsigned char* Data = Decrypted.data();
+    MapFileDecrypt(Data, EncData->data(), EncBytes);
 
     int DataPtr = 0;
     DataPtr += 1;
@@ -380,8 +384,6 @@ int OpenTerrainMapping(wchar_t* FileName) {
         DataPtr += 1;
         TerrainMappingAlpha[i] = static_cast<float>(Alpha) / 255.f;
     }
-
-    delete[] Data;
 
     TerrainGrassEnable = true;
 
@@ -423,27 +425,29 @@ bool SaveTerrainMapping(wchar_t* FileName, int iMapNumber)
     fclose(fp);
 
     {
-        fp = _wfopen(FileName, L"rb");
-        if (fp == NULL)
+        Core::Utilities::FileHandle plain(_wfopen(FileName, L"rb"));
+        if (!plain)
         {
             return (false);
         }
-        fseek(fp, 0, SEEK_END);
-        int EncBytes = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        auto* EncData = new unsigned char[EncBytes];
-        fread(EncData, 1, EncBytes, fp);
-        fclose(fp);
+        std::optional<std::vector<BYTE>> EncData = DataFileIO::ReadAll(plain.get());
+        plain.reset();
+        if (!EncData)
+        {
+            return false;
+        }
+        const int EncBytes = static_cast<int>(EncData->size());
 
-        int DataBytes = MapFileEncrypt(NULL, EncData, EncBytes);
-        auto* Data = new unsigned char[DataBytes];
-        MapFileEncrypt(Data, EncData, EncBytes);
-        delete[] EncData;
+        int DataBytes = MapFileEncrypt(NULL, EncData->data(), EncBytes);
+        std::vector<unsigned char> Data(static_cast<std::size_t>(DataBytes));
+        MapFileEncrypt(Data.data(), EncData->data(), EncBytes);
 
-        fp = _wfopen(FileName, L"wb");
-        fwrite(Data, DataBytes, 1, fp);
-        fclose(fp);
-        delete[] Data;
+        Core::Utilities::FileHandle encrypted(_wfopen(FileName, L"wb"));
+        if (!encrypted)
+        {
+            return false;
+        }
+        fwrite(Data.data(), DataBytes, 1, encrypted.get());
     }
     return true;
 }
@@ -888,8 +892,8 @@ bool OpenTerrainHeightNew(const wchar_t* strFilename)
     wcscat(FileName, NewFileName);
     wcscat(FileName, L"OZB");
 
-    FILE* fp = _wfopen(FileName, L"rb");
-    if (!fp)
+    Core::Utilities::FileHandle file(_wfopen(FileName, L"rb"));
+    if (!file)
     {
         wchar_t Text[256];
         mu_swprintf(Text, L"%ls file not found.", FileName);
@@ -900,13 +904,14 @@ bool OpenTerrainHeightNew(const wchar_t* strFilename)
         return false;
     }
 
-    fseek(fp, 0, SEEK_END);
-    int iBytes = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    BYTE* pbyData = new BYTE[iBytes];
-    fread(pbyData, 1, iBytes, fp);
-    fclose(fp);
+    std::optional<std::vector<BYTE>> content = DataFileIO::ReadAll(file.get());
+    file.reset();
+    if (!content || content->empty())
+    {
+        DataFileIO::ReportUnusableFile(FileName, L"File corrupted.");
+        return false;
+    }
+    BYTE* pbyData = content->data();
 
     DWORD dwCurPos = 0;
     dwCurPos += 4;
@@ -936,7 +941,6 @@ bool OpenTerrainHeightNew(const wchar_t* strFilename)
     }
     ++s_terrainHeightVersion;
 
-    delete[] pbyData;
     return true;
 }
 
@@ -1544,10 +1548,31 @@ void RenderFaceBlend(int Texture, int mx, int my)
     s_layerFaces.push_back({Texture, true, {v0, v1, v2, v3}});
 }
 
-void FaceTexture(int Texture, float xf, float yf, bool Water, bool Scale)
+namespace
+{
+// The Crywolf water faces the last terrain pass drew.
+std::vector<std::pair<float, float>> s_drawnCrywolfWater;
+} // namespace
+
+void UpdateTerrainWaterSpots()
 {
     vec3_t Light, Pos;
     Vector(0.30f, 0.40f, 0.20f, Light);
+    for (const auto& [xf, yf] : s_drawnCrywolfWater)
+    {
+        if (rand_fps_check(50))
+        {
+            float sx = xf * TERRAIN_SCALE + (float)((Random::Rand() % 100 + 1) * 1.0f);
+            float sy = yf * TERRAIN_SCALE + (float)((Random::Rand() % 100 + 1) * 1.0f);
+            Vector(sx, sy, Hero->Object.Position[2] + 10.f, Pos);
+            CreateParticle(BITMAP_SPOT_WATER, Pos, Hero->Object.Angle, Light, 0);
+        }
+    }
+    s_drawnCrywolfWater.clear();
+}
+
+void FaceTexture(int Texture, float xf, float yf, bool Water, bool Scale)
+{
     BITMAP_t* b = &Bitmaps[BITMAP_MAPTILE + Texture];
     float Width, Height;
     if (Scale)
@@ -1576,15 +1601,7 @@ void FaceTexture(int Texture, float xf, float yf, bool Water, bool Scale)
         float Water3 = 0.f;
         float Water4 = 0.f;
         if (gMapManager.WorldActive == WD_34CRYWOLF_1ST && Texture == 5)
-        {
-            if (rand_fps_check(50))
-            {
-                float sx = xf * TERRAIN_SCALE + (float)((Random::Rand() % 100 + 1) * 1.0f);
-                float sy = yf * TERRAIN_SCALE + (float)((Random::Rand() % 100 + 1) * 1.0f);
-                Vector(sx, sy, Hero->Object.Position[2] + 10.f, Pos);
-                CreateParticle(BITMAP_SPOT_WATER, Pos, Hero->Object.Angle, Light, 0);
-            }
-        }
+            s_drawnCrywolfWater.emplace_back(xf, yf);
 
         if (gMapManager.WorldActive == WD_30BATTLECASTLE && Texture == 5)
             suf -= WaterMove;
@@ -2679,7 +2696,7 @@ bool TestFrustrum2D(float x, float y, float Range)
     return true;
 }
 
-bool TestFrustrum(vec3_t Position, float Range)
+bool TestFrustrum(const vec3_t Position, float Range)
 {
     extern EGameScene SceneFlag;
     if (SceneFlag == LOG_IN_SCENE)
@@ -3270,6 +3287,14 @@ bool g_bMapEditorFullTerrain = false;
 
 void RenderTerrain(bool EditFlag)
 {
+    if (Render::Drawing::RecordsLegacyCall(Render::Drawing::LegacyCall::RenderTerrain, EditFlag))
+        return;
+    if (!EditFlag)
+    {
+        // The tiles noted are this pass's: a pass drawn again replaces them.
+        s_drawnCrywolfWater.clear();
+        ForgetDrawnTerrain();
+    }
     if (g_bMapEditorFullTerrain)
         ResetFrustrumBoundsFullTerrain();
 

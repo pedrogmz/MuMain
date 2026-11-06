@@ -4096,7 +4096,7 @@ namespace Render::Effects::Behaviors
         case 3:
             if (o->LifeTime < 250 + 50 + (34 - o->Skill) * 5)
             {
-                //RenderMeshEffect
+                // SpawnMeshEffects
                 if (o->Position[2] > 350)//o->StartPosition[2])
                 {
                     if (o->Direction[0] == 0 && o->Direction[1] == 0 && o->Direction[2] == 0)
@@ -10040,7 +10040,8 @@ namespace Render::Effects::Behaviors
             o->LifeTime = 0;
             return true;
         }
-        if (o->Owner->AnimationFrame > 2 && o->Owner->AnimationFrame < 8 & rand_fps_check(1))
+        // A bitwise &, not &&: the random check draws whenever the frame is above 2.
+        if (o->Owner->AnimationFrame > 2 && ((o->Owner->AnimationFrame < 8) & rand_fps_check(1)))
         {
             BMD* pModel = &Models[o->Owner->Type];
             vec3_t _StartPos, _EndPos;

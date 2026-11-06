@@ -62,7 +62,7 @@ int CreateParticleFpsChecked(int Type, vec3_t Position, vec3_t Angle, vec3_t Lig
 int CreateParticle(int Type, vec3_t Position, vec3_t Angle, vec3_t Light, int SubType, float Scale, OBJECT* Owner)
 {
     Diagnostics::DrawSpawnCheck::Note("particle");
-    if (!g_pOption->GetRenderAllEffects())
+    if (g_pOption && !g_pOption->GetRenderAllEffects())
     {
         return false;
     }
@@ -4178,8 +4178,6 @@ void MoveParticles()
                     break;
 
                 case 2:
-                    o->Position[0]; // += (float)(Random::Rand()%30-15)*1.f*o->Scale;
-                    o->Position[1]; // += (float)(Random::Rand()%30-15)*1.f*o->Scale;
                     o->Position[2] += (float)(Random::Rand() % 20 + 10) * 0.3f * FPS_ANIMATION_FACTOR;
                     o->Scale += FPS_ANIMATION_FACTOR * 0.005f;
                     break;
@@ -4191,8 +4189,6 @@ void MoveParticles()
                     o->Position[2] += (float)(Random::Rand() % 20 + 10) * 2.5f * o->Gravity * FPS_ANIMATION_FACTOR;
                     break;
                 case 4:
-                    o->Position[0]; // += (float)(Random::Rand()%30-15)*1.f*o->Scale;
-                    o->Position[1]; // += (float)(Random::Rand()%30-15)*1.f*o->Scale;
                     o->Position[2] += (float)(Random::Rand() % 20 + 10) * 0.3f * FPS_ANIMATION_FACTOR;
                     o->Scale += FPS_ANIMATION_FACTOR * 0.005f;
                     if (o->Position[2] > 350)
@@ -9364,7 +9360,7 @@ void RenderParticles(BYTE byRenderOneMore)
     for (std::size_t drawIndex = 0; drawIndex < drawCount; drawIndex++)
     {
         const int i = sortDraws ? drawOrder[drawIndex].particleIndex : static_cast<int>(drawIndex);
-        PARTICLE* o = &Particles[i];
+        const PARTICLE* o = &Particles[i];
         if (o->Live)
         {
             if (byRenderOneMore == 1)

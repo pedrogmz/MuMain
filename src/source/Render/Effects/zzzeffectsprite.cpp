@@ -50,13 +50,27 @@ namespace
 // character's Classic look alone.
 std::array<bool, MAX_SPRITES> s_spriteBloomExcluded{};
 // Sprites a RenderSprites pass already drew this frame; a later pass in the same frame draws only newer ones.
-std::array<bool, MAX_SPRITES> s_spriteDrawn{};
+SpriteDrawFlags s_spriteDrawn{};
 } // namespace
+
+SpriteDrawFlags SpritesDrawnThisFrame()
+{
+    return s_spriteDrawn;
+}
+
+void SetSpritesDrawnThisFrame(const SpriteDrawFlags& drawn)
+{
+    s_spriteDrawn = drawn;
+}
 
 void ClearSprites()
 {
     for (OBJECT& sprite : Sprites)
         sprite.Live = false;
+}
+
+void BeginSpriteDraws()
+{
     s_spriteDrawn.fill(false);
 }
 
@@ -80,6 +94,7 @@ int CreateSprite(int Type, vec3_t Position, float Scale, vec3_t Light, OBJECT* O
             s_spriteBloomExcluded[i] = mu::GetRenderer().IsBloomExcluded();
             s_spriteDrawn[i] = false;
             o->AnimationFrame = 1.f;
+            o->Visible = true;
             o->Scale = Scale;
             o->Angle[2] = Rotation;
             VectorCopy(Position, o->Position);
@@ -188,7 +203,7 @@ Render::EffectDrawing::SpriteDraw DescribeSprite(const OBJECT& sprite, bool bloo
 
 void RenderSprites(BYTE byRenderOneMore)
 {
-    if (!g_pOption->GetRenderAllEffects())
+    if (g_pOption && !g_pOption->GetRenderAllEffects())
     {
         return;
     }
@@ -199,7 +214,7 @@ void RenderSprites(BYTE byRenderOneMore)
 
     for (int i = 0; i < MAX_SPRITES; i++)
     {
-        OBJECT* o = &Sprites[i];
+        const OBJECT* o = &Sprites[i];
         if (byRenderOneMore == 1)
         {
             if (o->Position[2] > 350.f)
@@ -224,23 +239,6 @@ void RenderSprites(BYTE byRenderOneMore)
             {
                 s_spriteDrawn[i] = true;
             }
-        }
-    }
-}
-
-void CheckSprites()
-{
-    if (!g_pOption->GetRenderAllEffects())
-    {
-        return;
-    }
-
-    for (int i = 0; i < MAX_SPRITES; i++)
-    {
-        OBJECT* o = &Sprites[i];
-        if (o->Live)
-        {
-            o->Visible = true;
         }
     }
 }
