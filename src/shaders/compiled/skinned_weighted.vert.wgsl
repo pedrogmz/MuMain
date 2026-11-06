@@ -24,12 +24,12 @@ struct VertexOutput {
     @location(3) member_4: f32,
     @location(4) member_5: vec3<f32>,
     @location(5) member_6: vec3<f32>,
-    @location(6) @interpolate(flat) member_7: vec4<f32>,
+    @location(6) @interpolate(flat, either) member_7: vec4<f32>,
     @location(7) member_8: vec4<f32>,
     @location(8) member_9: vec3<f32>,
     @location(9) member_10: vec4<f32>,
     @location(10) member_11: vec4<f32>,
-    @location(15) member_12: f32,
+    @location(11) member_12: f32,
 }
 
 @group(1) @binding(0)

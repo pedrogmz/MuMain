@@ -28,7 +28,7 @@ struct VertexOutput {
     @location(0) member_1: vec2<f32>,
     @location(1) member_2: vec4<f32>,
     @location(2) member_3: f32,
-    @location(15) member_4: f32,
+    @location(3) member_4: f32,
 }
 
 @group(1) @binding(0)

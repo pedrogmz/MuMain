@@ -1663,9 +1663,20 @@ EM_JS(void, WEBGPU_INTERNAL_ForgetFuture, (double futureId), {
     delete WebGPU.Internals.futures[futureId];
 });
 
+// Spike: lets the web loader force compatibility mode without a rebuild by setting
+// window.MU_WEBGPU_COMPAT = true before Main.js is loaded.
+EM_JS(int, WEBGPU_INTERNAL_CompatModeRequested, (), {
+    return (typeof window !== 'undefined' && (window.MU_WEBGPU_COMPAT === true || window.MU_WEBGPU_COMPAT === 1 || window.MU_WEBGPU_COMPAT === '1')) ? 1 : 0;
+});
+
 static void WEBGPU_INTERNAL_RequestAdapter(WebGPURenderer *renderer, bool *success)
 {
     WGPURequestAdapterOptions adapterReqOptions = WGPU_REQUEST_ADAPTER_OPTIONS_INIT;
+
+    if (WEBGPU_INTERNAL_CompatModeRequested()) {
+        adapterReqOptions.featureLevel = WGPUFeatureLevel_Compatibility;
+        SDL_Log("WebGPU: requesting a compatibility-mode adapter");
+    }
 
     adapterReqOptions.powerPreference = renderer->preferLowPower ? WGPUPowerPreference_LowPower : WGPUPowerPreference_HighPerformance;
 
@@ -1699,13 +1710,15 @@ static bool WEBGPU_INTERNAL_IsFloat32Format(WGPUTextureFormat format)
 static Uint32 WEBGPU_INTERNAL_GetRequiredFeatures(SDL_PropertiesID props, WGPUFeatureName requiredFeatures[3])
 {
     Uint32 count = 0;
+    const bool compat = WEBGPU_INTERNAL_CompatModeRequested();
 
+    // These two are core-only; a compatibility adapter may not expose them.
     // This one has 98%, and only because of Samsung's weird browser.
-    if (SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, true)) {
+    if (!compat && SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, true)) {
         requiredFeatures[count++] = WGPUFeatureName_DepthClipControl;
     }
     // This one has 99.98%.
-    if (SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, true)) {
+    if (!compat && SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, true)) {
         requiredFeatures[count++] = WGPUFeatureName_IndirectFirstInstance;
     }
     if (SDL_GetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false)) {
@@ -1804,6 +1817,36 @@ static void WEBGPU_INTERNAL_RequestDevice(WebGPURenderer *renderer, bool *succes
 
     deviceDesc.requiredFeatureCount = numFeaturesEnabled;
     deviceDesc.requiredFeatures = features;
+
+    // Spike: request the adapter's compatibility-mode storage-buffer limits so the
+    // existing bone/terrain shaders can be tested before they are moved off storage buffers.
+    WGPUCompatibilityModeLimits requiredCompatLimits = WGPU_COMPATIBILITY_MODE_LIMITS_INIT;
+    WGPULimits requiredLimits = WGPU_LIMITS_INIT;
+    if (WEBGPU_INTERNAL_CompatModeRequested()) {
+        WGPUCompatibilityModeLimits adapterCompatLimits = WGPU_COMPATIBILITY_MODE_LIMITS_INIT;
+        WGPULimits adapterLimits = WGPU_LIMITS_INIT;
+        adapterLimits.nextInChain = &adapterCompatLimits.chain;
+        if (wgpuAdapterGetLimits(renderer->adapter, &adapterLimits) == WGPUStatus_Success) {
+            if (adapterCompatLimits.maxStorageBuffersInVertexStage != WGPU_LIMIT_U32_UNDEFINED) {
+                requiredCompatLimits.maxStorageBuffersInVertexStage = adapterCompatLimits.maxStorageBuffersInVertexStage;
+            }
+            if (adapterCompatLimits.maxStorageBuffersInFragmentStage != WGPU_LIMIT_U32_UNDEFINED) {
+                requiredCompatLimits.maxStorageBuffersInFragmentStage = adapterCompatLimits.maxStorageBuffersInFragmentStage;
+            }
+            if (adapterLimits.maxUniformBufferBindingSize != WGPU_LIMIT_U64_UNDEFINED) {
+                requiredLimits.maxUniformBufferBindingSize = adapterLimits.maxUniformBufferBindingSize;
+            }
+            if (adapterLimits.maxStorageBufferBindingSize != WGPU_LIMIT_U64_UNDEFINED) {
+                requiredLimits.maxStorageBufferBindingSize = adapterLimits.maxStorageBufferBindingSize;
+            }
+            requiredLimits.nextInChain = &requiredCompatLimits.chain;
+            deviceDesc.requiredLimits = &requiredLimits;
+            SDL_Log("WebGPU compat: vertex storage buffers = %u, fragment storage buffers = %u, uniform buffer binding = %llu",
+                    (unsigned)requiredCompatLimits.maxStorageBuffersInVertexStage,
+                    (unsigned)requiredCompatLimits.maxStorageBuffersInFragmentStage,
+                    (unsigned long long)requiredLimits.maxUniformBufferBindingSize);
+        }
+    }
 
     WGPUFuture future = wgpuAdapterRequestDevice(renderer->adapter, &deviceDesc, (WGPURequestDeviceCallbackInfo){
                                                                                      .callback = WEBGPU_INTERNAL_RequestDeviceCallback,
@@ -4082,7 +4125,7 @@ static SDL_GPUGraphicsPipeline *WEBGPU_CreateGraphicsPipeline(SDL_GPURenderer *d
         .frontFace = SDLToWebGPU_FrontFace[createInfo->rasterizer_state.front_face],
         .stripIndexFormat = WGPUIndexFormat_Undefined,
         .topology = SDLToWebGPU_PrimitiveType[createInfo->primitive_type],
-        .unclippedDepth = !createInfo->rasterizer_state.enable_depth_clip,
+        .unclippedDepth = !createInfo->rasterizer_state.enable_depth_clip && wgpuDeviceHasFeature(((WebGPURenderer *)driverData)->device, WGPUFeatureName_DepthClipControl),
         .nextInChain = NULL,
     };
 

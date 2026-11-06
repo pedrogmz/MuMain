@@ -213,7 +213,7 @@ fn main_1() {
 }
 
 @fragment
-fn main(@location(0) inputuv: vec2<f32>, @location(1) inputcolor: vec4<f32>, @location(3) inputeyeDepth: f32, @location(4) inputnormal: vec3<f32>, @location(5) inputviewVector: vec3<f32>, @location(6) @interpolate(flat) inputlightDirectionAndSpecular: vec4<f32>, @location(7) inputworldPositionAndDynamicLights: vec4<f32>, @location(8) inputworldNormal: vec3<f32>, @location(9) inputtangent: vec4<f32>, @location(10) inputworldTangentAndNormalMapScale: vec4<f32>) -> @location(0) vec4<f32> {
+fn main(@location(0) inputuv: vec2<f32>, @location(1) inputcolor: vec4<f32>, @location(3) inputeyeDepth: f32, @location(4) inputnormal: vec3<f32>, @location(5) inputviewVector: vec3<f32>, @location(6) @interpolate(flat, either) inputlightDirectionAndSpecular: vec4<f32>, @location(7) inputworldPositionAndDynamicLights: vec4<f32>, @location(8) inputworldNormal: vec3<f32>, @location(9) inputtangent: vec4<f32>, @location(10) inputworldTangentAndNormalMapScale: vec4<f32>) -> @location(0) vec4<f32> {
     inputuv_1 = inputuv;
     inputcolor_1 = inputcolor;
     inputeyeDepth_1 = inputeyeDepth;
