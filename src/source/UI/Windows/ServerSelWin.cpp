@@ -175,7 +175,7 @@ void CServerSelWin::BindRmlModel(Rml::DataModelConstructor& c, ServerSelRmlModel
 
 void CServerSelWin::Release()
 {
-    m_RmlView.Hide();
+    Show(false);
 }
 
 void CServerSelWin::Show(bool bShow)
@@ -185,7 +185,8 @@ void CServerSelWin::Show(bool bShow)
     if (m_RmlView.Document())
     {
         if (bShow) { SyncRmlModel(); m_RmlView.Document()->Show(); }
-        else       m_RmlView.Document()->Hide();
+        else if (m_RmlView.Document()->IsVisible())
+            m_RmlView.Document()->Hide();
     }
     if (bShow)
         m_fitPending = true;

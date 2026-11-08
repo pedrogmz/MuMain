@@ -120,12 +120,34 @@ CMake downloads miniaudio, GLM, spdlog, SDL3_ttf and SDL3_image through `FetchCo
 Audio uses miniaudio. SDL3_ttf supplies the vendored FreeType used by RmlUi; neither
 SDL_mixer nor a separate FreeType submodule is required.
 
+The libraries that come as archives unpack with the time of unpacking, not the
+archives' own older dates, so the build after a version change compiles the new
+sources. Each `FetchContent_Declare` with a URL sets `DOWNLOAD_EXTRACT_TIMESTAMP FALSE`
+for it, and `cmake/UnpackArchive.cmake`, which unpacks SDL3_ttf's libraries, passes
+`TOUCH`; the `archive_extract_times_contract` static check keeps both.
+
 SDL3_image comes as its release archive, without the libraries it can vendor (libpng,
 libjpeg, zlib, libtiff, libwebp, libjxl, libavif): PNG and JPEG load through
 stb_image, and the formats that would need one of them are off. Turning such a format
 on also means fetching SDL_image with that library; the comment above
 `FetchContent_Declare(SDL3_image)` in `CMakeLists.txt` says how, and the
 `sdl_image_archive_contract` static check names what is missing.
+
+SDL3_ttf comes as its release archive too, and the four libraries it vendors
+(FreeType, HarfBuzz, plutosvg, plutovg) as archives of the commits SDL3_ttf pins
+them to, each checked by its SHA-256. SDL3_ttf's patch step unpacks them into its
+`external/` folder before the patches in `cmake/patches/` apply; the
+`sdl_ttf_archives_contract` static check keeps each one there. Updating SDL3_ttf
+means updating those four commits and hashes as well, and the list of the
+release's commits in `tests/test_sdl_ttf_archives.cmake`, which the check
+compares them with; the comment above `FetchContent_Declare(SDL3_ttf)` says
+where to find them.
+
+Each run of that patch step starts from the archives' sources: it unpacks
+SDL3_ttf's own archive, kept in the sub-build's download folder, again first.
+Each patch's SHA-256 is part of its patch command, so an edited patch in
+`cmake/patches/` runs the step again, also in an existing build folder and in
+CI's restored library caches, and applies to the unpatched sources.
 
 ### Build options
 
@@ -136,6 +158,7 @@ on also means fetching SDL_image with that library; the comment above
 | `ENABLE_CONTROL_SOCKET` | `ON` / `OFF` | Builds the developer control socket that lets test scripts drive the client (see [`control-socket.md`](../control-socket.md)). Default `OFF`; never for player builds. When `OFF`, nothing under `src/source/App/Control/` and no local-socket transport is compiled in, and the `MU_CONTROL_SOCKET` variable is ignored - enforced by the `control_socket_leak` test. The `-mueditor` and `-in-game-tests` presets turn it `ON`, and so does `ENABLE_IN_GAME_TESTS`. |
 | `ENABLE_IN_GAME_TESTS` | `ON` / `OFF` | Publishes the in-game tester next to `Main` and adds the `InGameTests` / `InGameTestsGui` targets (see [`in-game-tests.md`](../in-game-tests.md)); both need the .NET SDK, like the client's network library. Default `OFF`; while `ON`, it turns `ENABLE_CONTROL_SOCKET` on too, which the tester drives the client through. The `-mueditor` and `-in-game-tests` presets turn it `ON`, the player presets `OFF`. |
 | `BUILD_TESTING` | `ON` / `OFF` | Builds and registers the unit tests (run with `ctest`). |
+| `CMAKE_DISABLE_PRECOMPILE_HEADERS` | `ON` / `OFF` | `ON` compiles without precompiled headers: the game's `stdafx.h` (also in the tests), SDL's and RmlUi's. Default `OFF`: the game's files that include `stdafx.h` share one precompiled copy of it, so a cold build of the game library takes about half the time on Windows and 30% less on Linux. The test files that include it, in tests that link `MuClient`, share another, so a cold build of the tests takes about 28% less time on Windows and 19% less on Linux. Which files include it is checked at configure time: a file that adds or drops the include follows after the next configure. CI's PR and main push builds turn it `ON`, so their compiler cache covers every file (see [Hosted releases](#hosted-releases)). |
 | `RMLUI_SDL_GPU_NUM_MSAA_SAMPLES` | `1` / `2` / `4` / `8` | RmlUi UI-layer sample count. Default `1` disables MSAA to avoid reported NVIDIA/Vulkan device loss. Higher values are opt-in for diagnostics; see [rendering parity](rendering-parity.md#rmlui-multisampling). |
 | `MU_COPY_RUNTIME_ASSETS` | `ON` / `OFF` | Copies `Data/` and `fonts/` beside the executable. Defaults to `ON` for local runnable builds. |
 | `MU_WARNINGS_AS_ERRORS` | `ON` / `OFF` | Turns compiler, linker and DXC shader warnings into errors in the game's own code and its tests; the third-party libraries keep their own settings. Linker warnings need CMake 4.0 or newer (an older CMake says so and keeps them warnings). Default `OFF`; CI's player builds turn it `ON` (see [No warnings](#no-warnings)). |
@@ -266,13 +289,14 @@ SHA-256 (**Install compiler cache**). Before a compiler cache is saved, **Trim
 compiler cache** removes the objects the build did not use (ccache marks each object
 it finds), so an entry holds one build's objects, not every build's since the cache
 began: about 0.5 GB on Windows, whose objects carry their debug info (`/Z7`). PR
-and main push builds configure with `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON`: SDL
-and RmlUi use precompiled headers, which ccache does not cache, so their files
-(over a quarter of each build: 503 of 1666 compile calls on Linux, 421 of 1584 on
-macOS) compiled again on every run while the game's own files hit. The nightly and
-manual release builds keep the precompiled headers, as local builds do, so a change
-that breaks only with them fails there; those builds save no cache, so only SDL and
-RmlUi compile without one. All builds restore the compiler cache; only
+and main push builds configure with `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON`: SDL,
+RmlUi and the game (`stdafx.h`) use precompiled headers, which ccache does not
+cache, so their files would compile again on every run (SDL and RmlUi alone are over
+a quarter of each build: 503 of 1666 compile calls on Linux, 421 of 1584 on macOS).
+The nightly and manual release builds keep the precompiled headers, as local builds
+do, so a change that breaks only with them fails there; those builds save no cache,
+so SDL, RmlUi and the game files that include `stdafx.h` compile without one. All
+builds restore the compiler cache; only
 successful main pushes save it, so PR-only entries do not displace shared caches,
 and a PR starts from the latest main. Windows vcpkg primary
 keys include the runner image, compiler, vcpkg revision, manifest and toolchain.
@@ -282,15 +306,35 @@ before reusing packages across image or compiler updates.
 The library caches keep the downloaded library sources (`_deps/*-src`,
 `_deps/*-subbuild`) and the NuGet packages, not the libraries' build folders: ninja
 recompiles restored build folders anyway. Their keys hash the root `CMakeLists.txt`
-(which declares the libraries), `cmake/patches` and the ClientLibrary projects, and
-name the .NET SDK version (which picks the NativeAOT compiler packages in `.nuget`),
+(which declares the libraries), `cmake/patches`, the scripts that unpack and patch the
+sources (`cmake/UnpackArchive.cmake`, `cmake/ApplyGitPatch.cmake`) and the ClientLibrary
+projects, and name the .NET SDK version (which picks the NativeAOT compiler packages in `.nuget`),
 so a new entry is stored only when one of those changes, not with every new source
 file in `src/CMakeLists.txt`.
 
-PR runs only read the library and vcpkg caches, as they do the compiler caches:
-**Restore dependencies** and **Restore vcpkg packages** read them, and
-**Save dependencies** (after the build) and **Save vcpkg packages** (after the
-configure step) store them only in main pushes, when the exact key was missing. A
+The Linux build also caches the apt packages it installs (about 45 MB): the image's
+Ubuntu mirror sometimes sends them at 35–160 kB/s, and **Install build tools** then
+took 5–24 minutes instead of about 20 seconds. **Find apt packages** updates the
+index and names the cache after the runner image and the names, sizes and hashes of
+the files apt would fetch (`apt-get install --print-uris`), so a new package version
+gives a new key and another mirror for the same files does not. Which files apt
+fetches depends on what the image has installed: **Restore apt packages** reads the
+image's newest entry first, then any image's. **Fetch apt packages**
+downloads them (`--download-only`): apt uses the restored files that still match the
+index and fetches only the others. In the runs that save the cache, **Gather apt
+packages** then collects the listed files for **Save apt packages**
+([`scripts/ci_apt_cache.py`](../../scripts/ci_apt_cache.py)), before **Install build
+tools** installs them, so no clean-up after dpkg can remove them first. When one is
+missing, the save stores nothing and a notice names it. Quality Gates gets cppcheck,
+which the image lacks, from an apt cache of its own the same way, and only in runs
+that change C++ files: only its formatting check and static analysis use cppcheck
+and clang-format, and they skip the other runs.
+
+PR runs only read the library, vcpkg and apt caches, as they do the compiler caches:
+**Restore dependencies**, **Restore vcpkg packages** and **Restore apt packages** read
+them, and **Save dependencies** (after the build), **Save vcpkg packages** (after the
+configure step) and **Save apt packages** (after the download) store them only in main
+pushes, when the exact key was missing. A
 PR's own entry would serve that PR alone, and the repository's caches share 10 GB:
 past that, GitHub deletes the least recently used entries, main's included. The
 nightly and manual release runs save nothing either: they run beside the pushes,
@@ -302,12 +346,13 @@ compiler cache for each main push. After the builds of a run on main, the
 **Prune caches** job ([`scripts/ci_cache_prune.py`](../../scripts/ci_cache_prune.py))
 deletes all but the newest entry of each cache on main. The compiler caches keep
 the newest entry of each compiler: a job restores only entries of its own compiler,
-and while GitHub moves the runners to a new image, jobs land on both images. An
-entry a job read in the last 15 minutes is left for a later run, as that job may
-still be downloading it, unless the last read was the run's own: each build job
-notes when its restores ended (**Note when the caches were read**), so the entry a
-build started from goes in the same run. It is the only job with a token that can
-delete caches.
+and while GitHub moves the runners to a new image, jobs land on both images. The apt
+caches keep the newest entry of each image for the same reason. An entry a job read
+in the last 15 minutes is left for a later run, as that job may still be downloading
+it, unless the last read was the run's own: each build job, and Quality Gates for its
+cppcheck, notes when its restores ended (**Note when the caches were read**), so the
+entry a job started from goes in the same run. Prune caches is the only job with a
+token that can delete caches.
 CI Required waits for it: a prune that fails or warns fails the run like a build,
 since without it the caches fill up again. A new cache that is restored by a
 key prefix needs its prefix in the script's `KINDS`, and in `PER_COMPILER` when that
@@ -373,6 +418,60 @@ tar -xzf MuMain-data-<id>.tar.gz -C MuMain-runtime
 
 The assembled directory contains `Main.exe`, the network and runtime DLLs,
 configuration, shaders, `Data/`, and `fonts/`.
+
+### Which client a log came from
+
+`MuError.log` starts with the client's identity, so a bug report shows what it ran:
+
+```text
+Release       : v1.37.0
+Build commit  : <the commit the client was built from>
+Build         : Release NoEditor MSVC x64, built 2026-11-06 13:02:11 UTC
+Data          : data-<id> (matches this client)
+```
+
+- **Release** comes from `release-version.txt`, which the release job adds to each
+  runtime archive. Self-built clients and CI artifacts say `none`.
+- **Build commit** ends in `(with local changes)` when tracked files differed from
+  the commit. `https://github.com/sven-n/MuMain/compare/<commit>...main` lists what
+  main has gained since.
+- **Build** names the configuration, editor, compiler and architecture, and when the
+  executable was written (linked, or in a download the time the archive keeps), in UTC.
+- **Data** compares `Data/DataVersion.txt`, which the data workflow adds to the data
+  archive, with the data release the client was built for. A different id means the
+  runtime and data downloads don't belong together; data archives from before the
+  file, and self-built clients, say `unknown`.
+- Either line says `unreadable` when its file is there but holds no version, for
+  example after someone edited it.
+
+The log goes on with the OS, CPU and RAM, the `ClientLibrary` line, the data language
+(`Eng`, `Por` or `Spn`, which picks the `Data/Local` files), and, once the renderer is
+up, the GPU, its graphics API and driver version, and the UI language the player reads
+(`en`, `de`, `zh-CN`, ...) with whether item names are translated. A change later adds
+a line: `> UI language changed to ...` for a switch in the options window or the editor,
+`> Item names now translated.` or `> Item names now in English.` for the options window's
+item name setting.
+`ClientLibrary` names the commit the .NET library was built from and its OpenMU
+packets version. In a release download that commit is the client's, so a different
+one means a library from another download. A local build rebuilds the library only
+when its sources change, so there it can name an older commit.
+
+The log names the connect server (`> Server = ..., from config.ini` or `from the
+command line`) and every server the client connects to (`NET: connecting to ...`).
+Players post their logs in public, so an address is written out only when it can't
+lead to a server:
+
+| Address | Written as |
+| --- | --- |
+| The local machine: `127.0.0.0`–`127.255.255.255`, `0.0.0.0`–`0.255.255.255`, `localhost` and `*.localhost`, `::1`, `::` | as configured, e.g. `127.127.127.127:44405` |
+| A private network: `10.x`, `172.16.x`–`172.31.x`, `192.168.x`, `169.254.x`, `100.64.x`–`100.127.x`, `fc00::/7`, `fe80::/10` | as configured, with `(private network)` |
+| Any other IP address | `a public IPv4 address:44405` or `a public IPv6 address:44405` |
+| A host name, e.g. `mu.example.com` | `a host name:44405` |
+
+An IPv4 address in IPv6 form, e.g. `::ffff:192.168.1.20`, counts as that IPv4 address.
+
+A failed connection logs the socket error (`SocketException ConnectionRefused (10061)`)
+instead of the exception text, which would name the address.
 
 If a music file is missing or cannot be decoded, the client logs the failure and leaves
 that track silent for the rest of the audio session. Scene changes do not repeatedly

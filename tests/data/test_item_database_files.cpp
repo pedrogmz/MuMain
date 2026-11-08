@@ -4,6 +4,8 @@
 
 #include "ClientDataScope.h"
 #include "ItemModelDatabaseScope.h"
+#include "LookEditsScope.h"
+#include "LogCapture.h"
 #include "ItemStatProfilesScope.h"
 #include "TestFiles.h"
 #include "TestImGuiContext.h"
@@ -23,6 +25,11 @@
 #include "Data/GameData/ItemData/ItemJsonFormat.h"
 #include "Data/GameData/ItemData/ItemTooltipLayouts.h"
 #include "Data/GameData/ItemData/ItemNames.h"
+#include "Data/GameData/ItemData/ItemOptionDatabase.h"
+#include "Data/GameData/ItemData/ItemOptionValidation.h"
+#include "Data/GameData/ItemData/ItemOptionsJson.h"
+#include "Data/GameData/ItemData/OptionRulesJson.h"
+#include "Data/GameData/ItemData/OptionTextsJson.h"
 #include "Data/GameData/EffectData/GlowColorList.h"
 #include "Data/GameData/ItemData/ItemModelDatabase.h"
 #include "Data/GameData/ItemData/ItemModelJsonFormat.h"
@@ -32,6 +39,7 @@
 #include "Data/GameData/ItemData/ItemStructs.h"
 #include "Data/GameData/ItemData/ItemType.h"
 #include "Data/GameData/ItemData/ItemTypeUse.h"
+#include "Data/GameData/LookData/LookStore.h"
 #include "Engine/Object/ItemTooltipSnapshot.h"
 #include "Engine/Object/ZzzCharacter.h"
 #include "Engine/Object/ZzzInfomation.h"
@@ -75,6 +83,7 @@
 #include "UI/ItemTools/MuItemTooltipUI.h"
 #include "UI/ItemTools/TooltipLineLooks.h"
 #include "UI/ItemTranslations/MuItemTranslationsUI.h"
+#include "UI/StyleEditor/LookEdits.h"
 #include "../ui/RmlLayoutFixture.h"
 #include "UI/MapEditor/MapEditorUI.h"
 #include "TestModelSlots.h"
@@ -286,6 +295,74 @@ TEST_CASE("The shipped ground labels load without problems and are written as th
         CHECK(false);
     }
     CHECK(WriteGroundLabelsJson(labels.file) == TestFiles::ReadWholeFile(file));
+}
+
+// The option files as the game and the editor read them, with the items' links. Outside the editor's tests, so the
+// pull request checks (with the editor off) run it too.
+TEST_CASE("The shipped option files load without problems and are written as they are read [data][items]")
+{
+    const std::filesystem::path optionsDirectory = DataDirectory / "Items" / "Options";
+    const std::filesystem::path textsFile = DataDirectory / "Items" / "Tooltips" / OptionTextsFileName;
+    const std::filesystem::path rulesFile = optionsDirectory / OptionRulesFileName;
+    const ItemOptionsLoadResult definitions = LoadItemOptionsDirectory(optionsDirectory);
+    const OptionTextsLoadResult texts = LoadOptionTextsFile(textsFile);
+    const OptionRulesLoadResult rules = LoadOptionRulesFile(rulesFile);
+    std::vector<ItemDataIssue> issues = definitions.issues;
+    issues.insert(issues.end(), texts.issues.begin(), texts.issues.end());
+    issues.insert(issues.end(), rules.issues.begin(), rules.issues.end());
+    ValidateOptionTextLocales(texts.texts, I18N::GetAvailableLocales(), OptionTextsFileName, issues);
+    ValidateItemOptions(definitions.definitions, texts.texts, OptionTextsFileName, issues);
+    ValidateOptionRules(rules.rules, definitions.definitions, OptionRulesFileName, issues);
+    const std::vector<ItemDefinition> items = LoadItemDataDirectory(DataDirectory / "Items").items;
+    const ItemOptionDatabase options(definitions.definitions, texts.texts, rules.rules);
+    ValidateItemOptionLinks(items, options, issues);
+    ValidateOptionDefinitionUse(items, options, issues);
+    for (const ItemDataIssue& issue : issues)
+    {
+        INFO(issue.ToString());
+        CHECK(false);
+    }
+    REQUIRE_FALSE(definitions.definitions.empty());
+
+    std::vector<std::string> files;
+    for (const ItemOptionDefinition& definition : definitions.definitions)
+    {
+        if (std::ranges::find(files, definition.file) == files.end())
+        {
+            files.push_back(definition.file);
+        }
+    }
+    for (const std::string& file : files)
+    {
+        CAPTURE(file);
+        std::vector<ItemOptionDefinition> inFile;
+        std::ranges::copy_if(definitions.definitions, std::back_inserter(inFile),
+                             [&](const ItemOptionDefinition& definition) { return definition.file == file; });
+        CHECK(WriteItemOptionsJson(inFile) == TestFiles::ReadWholeFile(optionsDirectory / file));
+    }
+    CHECK(WriteOptionTextsJson(texts.texts) == TestFiles::ReadWholeFile(textsFile));
+    CHECK(WriteOptionRulesJson(rules.rules) == TestFiles::ReadWholeFile(rulesFile));
+}
+
+// The game reads the items' lists; the editor writes them from the option rules. The shipped lists are the ones the
+// rules give (no item differs on purpose yet). Outside the editor's tests, as the test above.
+TEST_CASE("Every shipped item's option list is the one the option rules give [data][items]")
+{
+    const OptionRulesLoadResult rules = LoadOptionRulesFile(DataDirectory / "Items" / "Options" / OptionRulesFileName);
+    REQUIRE(rules.issues.empty());
+    int withOptions = 0;
+    for (const ItemDefinition& item : LoadItemDataDirectory(DataDirectory / "Items").items)
+    {
+        if (!item.Exists())
+        {
+            continue;
+        }
+        CAPTURE(item.group);
+        CAPTURE(item.number);
+        CHECK(item.options == DeriveItemOptions(rules.rules, item));
+        withOptions += item.options.empty() ? 0 : 1;
+    }
+    CHECK(withOptions > 400);
 }
 
 // The shipped tooltip file, read once.
@@ -1172,6 +1249,23 @@ TEST_CASE("Item data errors stop loading [data][items]")
     CHECK(errorMessage.find("Group00_Sword.json") != std::string::npos);
 }
 
+// A broken option file stops the start with its own problem: without its definitions, every item's link would be an
+// error of its own and bury it.
+TEST_CASE("A fatal option file stops loading without an error for each item's link [data][items]")
+{
+    TemporaryClientFolder folder;
+    folder.CopyShippedItems();
+    std::ofstream(folder.Directory() / GetItemOptionsDirectory() / "Luck.json", std::ios::binary) << "{";
+    ClientDataScope client(folder.Directory());
+    LogCapture log("data");
+
+    std::string errorMessage;
+    CHECK_FALSE(g_ItemDataHandler.Load(errorMessage));
+    CHECK(errorMessage.find("Luck.json") != std::string::npos);
+    CHECK_FALSE(log.LineWith("Luck.json").empty());
+    CHECK(log.LineWith("is no option definition").empty());
+}
+
 TEST_CASE("An empty item name stops loading [data][items]")
 {
     // Unlike an entry without a name, which has no name key at all.
@@ -1826,6 +1920,35 @@ TEST_CASE("Item editor changes go into the item database [data][items][editor]")
         spear.slot = ItemSlot::MainHand;
         REQUIRE(g_ItemDataHandler.AddItem(spear, nullptr));
         CHECK(g_ItemDatabase.GetWeaponKind(MakeItemType(3, 100)) == WeaponKind::Spear);
+        // And the options the option rules give it.
+        CHECK(g_ItemDatabase.Find(3, 100)->options == std::vector<std::string>{"luck"});
+    }
+
+    SUBCASE("an item's option list follows its data, and a list an edit picked stays")
+    {
+        const std::vector<std::string> luck{"luck"};
+        REQUIRE(g_ItemDatabase.Find(KrisType)->options == luck);
+        EditItem(KrisType, [](ItemDefinition& item) { item.tags.Set(ItemTag::Ammunition); });
+        CHECK(g_ItemDatabase.Find(KrisType)->options.empty());
+        EditItem(KrisType, [](ItemDefinition& item) { item.tags.Set(ItemTag::Ammunition, false); });
+        CHECK(g_ItemDatabase.Find(KrisType)->options == luck);
+
+        EditItem(KrisType, [](ItemDefinition& item) { item.options.clear(); });
+        CHECK(g_ItemDatabase.Find(KrisType)->options.empty());
+        EditItem(KrisType, [](ItemDefinition& item) { item.width = 2; });
+        CHECK(g_ItemDatabase.Find(KrisType)->options.empty());
+    }
+
+    SUBCASE("a moved item's option list follows its new number")
+    {
+        // The rules give luck to the Wings of Elf (12/0), not to a number of group 12 no rule names.
+        const int emptyWingType = MakeItemType(12, 300);
+        REQUIRE(g_ItemDatabase.Find(emptyWingType) == nullptr);
+        REQUIRE(g_ItemDatabase.Find(ITEM_WINGS_OF_ELF)->options == std::vector<std::string>{"luck"});
+        std::swap(ItemAttribute[ITEM_WINGS_OF_ELF], ItemAttribute[emptyWingType]);
+        g_ItemDataHandler.OnItemsSwapped(ITEM_WINGS_OF_ELF, emptyWingType);
+        CHECK(g_ItemDatabase.Find(emptyWingType)->options.empty());
+        CHECK(g_ItemDatabase.GetOptionLinks(emptyWingType).empty());
     }
 
     SUBCASE("a copy keeps a weapon kind and a stat profile its source picked")
@@ -2762,6 +2885,63 @@ TEST_CASE("An entry without a name moves and goes as an item does [data][items][
     g_ItemEdits.GetHistory().Clear();
 }
 
+// The Style Editor's Apply for one item (design L36, L39): a copy of the look in the original's folder, which only that
+// item or a new duplicate of it names; one undo step takes back the look and the item together.
+TEST_CASE("Apply for only this item or a new item makes a copy of the look, which the item wears [data][items][editor]")
+{
+    using Data::Looks::Layer;
+    using Data::Looks::LookDefinition;
+    TemporaryClientFolder folder;
+    folder.CopyShippedItems();
+    folder.CopyShippedGlowColors();
+    ClientDataScope client(folder.Directory());
+    ItemModelDatabaseScope restoreModels;
+    std::string errorMessage;
+    REQUIRE(g_ItemDataHandler.Load(errorMessage));
+    REQUIRE(g_ItemDataHandler.LoadModels(errorMessage));
+    const LookEditsScope looks({{"brightBlade", {Layer{}}, {}}}, {{"Blades", {}, {"brightBlade"}}});
+    REQUIRE(g_ItemModelDatabase.Find(KrisType) != nullptr);
+    const ItemModelDefinition kris = *g_ItemModelDatabase.Find(KrisType);
+    REQUIRE(kris.model.empty());
+    LookDefinition gold{"brightBladeGold", {Layer{.blend = Data::Looks::Blend::Glow}}, {}};
+
+    g_LookEdits.ApplyToItemOnly("Only this item", "brightBlade", gold, KrisType);
+    CHECK(g_ItemModelDatabase.Find(KrisType)->renderStyle == "brightBladeGold");
+    REQUIRE(g_LookEdits.Find("brightBladeGold") != nullptr);
+    CHECK(*g_LookEdits.Find("brightBladeGold") == gold);
+    CHECK(g_LookEdits.Find("brightBlade")->layers == std::vector<Layer>{Layer{}});
+    CHECK(g_LookEdits.GetState().folders ==
+          std::vector<Data::Colors::ColorFolder>{{"Blades", {}, {"brightBlade", "brightBladeGold"}}});
+    CHECK(Data::Looks::g_LookStore.FindRenderStyle("brightBladeGold") != nullptr);
+    CHECK(g_ItemEdits.GetHistory().GetUndoLabel() == "Only this item");
+    REQUIRE(g_ItemEdits.Undo());
+    CHECK(*g_ItemModelDatabase.Find(KrisType) == kris);
+    CHECK(g_LookEdits.Find("brightBladeGold") == nullptr);
+    CHECK_FALSE(g_ItemEdits.GetHistory().CanUndo());
+
+    // A new item: Duplicate item's steps (the model file becomes shared) are part of the one step.
+    const int newType = MakeItemType(0, GetNextFreeItemNumber(0, 0));
+    REQUIRE(IsFreeItemType(newType));
+    g_LookEdits.ApplyToNewItem("A new item", "brightBlade", gold, KrisType, newType, "Golden Kris");
+    REQUIRE(g_ItemDatabase.Find(newType) != nullptr);
+    CHECK(g_ItemDatabase.Find(newType)->names.GetNeutral() == "Golden Kris");
+    REQUIRE(g_ItemModelDatabase.Find(newType) != nullptr);
+    CHECK(g_ItemModelDatabase.Find(newType)->renderStyle == "brightBladeGold");
+    CHECK(g_ItemModelDatabase.Find(newType)->model == g_ItemModelDatabase.Find(KrisType)->model);
+    CHECK(g_ItemModelDatabase.Find(KrisType)->renderStyle == kris.renderStyle);
+    CHECK(g_LookEdits.Find("brightBladeGold") != nullptr);
+    CHECK(g_ItemEdits.GetHistory().GetUndoLabel() == "A new item");
+    REQUIRE(g_ItemEdits.Undo());
+    CHECK(IsFreeItemType(newType));
+    CHECK(*g_ItemModelDatabase.Find(KrisType) == kris);
+    CHECK(g_LookEdits.Find("brightBladeGold") == nullptr);
+    CHECK_FALSE(g_ItemEdits.GetHistory().CanUndo());
+
+    // A name a look has already is no copy.
+    g_LookEdits.ApplyToItemOnly("Only this item", "brightBlade", {"brightBlade", {}, {}}, KrisType);
+    CHECK_FALSE(g_ItemEdits.GetHistory().CanUndo());
+}
+
 namespace
 {
 // The id of a field an item tool window draws, inside the ID scopes it pushes
@@ -2855,18 +3035,34 @@ void RenderModelTool()
     bool open = true;
     g_MuItemModelUI.BeforeFrame();
     ImGui::NewFrame();
+    // Tall enough for the fields below the preview: ImGui leaves out a part a window shows none of.
+    ImGui::SetNextWindowSize(ImVec2(900.0f, 1000.0f));
     g_MuItemModelUI.Render(&open);
     ImGui::Render();
     CHECK(ImGui::GetCurrentContext()->ErrorCountCurrentFrame == 0);
+}
+
+// The part of the model tool below its preview, which scrolls: its fields are there.
+const ImGuiWindow* ModelToolFields()
+{
+    const ImGuiWindow* tool = ImGui::FindWindowByName(MuEditor::WindowIds::ItemModel);
+    REQUIRE(tool != nullptr);
+    for (const ImGuiWindow* window : ImGui::GetCurrentContext()->Windows)
+    {
+        if (window->ParentWindow == tool && std::strstr(window->Name, "##Fields") != nullptr)
+        {
+            return window;
+        }
+    }
+    FAIL("the model tool has no fields below its preview");
+    return nullptr;
 }
 
 // A widget of the shared model form: the tool pushes the selected item's ID,
 // the form's fields "SharedModel" too.
 ImGuiID SharedModelFormId(const char* label, const char* scope = nullptr)
 {
-    const ImGuiWindow* tool = ImGui::FindWindowByName(MuEditor::WindowIds::ItemModel);
-    REQUIRE(tool != nullptr);
-    ImGuiID id = ImGui::GetIDWithSeed(g_ItemSelection.GetItemType(), tool->ID);
+    ImGuiID id = ImGui::GetIDWithSeed(g_ItemSelection.GetItemType(), ModelToolFields()->ID);
     if (scope != nullptr)
     {
         id = ImGui::GetIDWithSeed(scope, nullptr, id);
@@ -4160,7 +4356,7 @@ TEST_CASE("A change of the profile rules gives the items that follow them the ne
         const auto armor = std::ranges::find_if(changed.profileRules,
                                                 [](const StatProfileRule& rule) { return rule.profile == "armor"; });
         REQUIRE(armor != changed.profileRules.end());
-        armor->slots.reset(static_cast<size_t>(ItemSlot::Boots));
+        armor->conditions.slots.reset(static_cast<size_t>(ItemSlot::Boots));
         const std::vector<MuEditor::Items::StatProfileChange> changes = MuEditor::Items::FindStatProfileChanges(
             g_ItemDatabase.GetAllSlots(), g_ItemDatabase.GetStatProfiles(), ItemStatProfiles(changed));
         REQUIRE(changes.size() == boots.size());

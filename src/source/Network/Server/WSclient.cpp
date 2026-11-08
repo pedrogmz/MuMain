@@ -43,6 +43,7 @@
 #include "Network/Reconnect/LoginSceneReconnect.h"
 #include "Network/Reconnect/ReconnectManager.h"
 #include "Network/IncomingPacketQueue.h"
+#include "Network/EndpointForLog.h"
 #include "I18N/All.h"
 
 #include "Audio/DSPlaySound.h"
@@ -57,6 +58,7 @@
 #include "GameLogic/Pets/GIPetManager.h"
 #include "GameLogic/Pets/w_PetProcess.h"
 #include "Network/Server/CSMapServer.h"
+#include "Network/Server/IllusionTempleResult.h"
 #include "Network/Server/TransformViewportEntry.h"
 #include "GameLogic/NPCs/npcGateSwitch.h"
 #include "GameLogic/Items/CComGem.h"
@@ -399,7 +401,9 @@ BOOL CreateSocket(const wchar_t* IpAddr, unsigned short Port)
         bResult = FALSE;
         wchar_t connectError[256];
         mu_swprintf_s(connectError, L"Cannot connect to %ls:%d. Server may be offline.", IpAddr, Port);
-        g_ErrorReport.Write(L"NET: %ls\r\n", connectError);
+        // The dialog names the address; the log, which players post, follows Network::DescribeEndpointForLog.
+        g_ErrorReport.Write(L"NET: Cannot connect to %hs. Server may be offline.\r\n",
+                            Network::DescribeEndpointForLog(mu_wchar_to_utf8(IpAddr), Port).c_str());
         g_ErrorReport.WriteCurrentTime();
         delete SocketClient;
         SocketClient = nullptr;
@@ -1817,7 +1821,13 @@ void ReceiveDeleteInventory(const BYTE* ReceiveBuffer)
 
 int CalcItemLength(std::span<const BYTE> ReceiveBuffer)
 {
-    auto Data = safe_cast<PITEM_EXTENDED_BASE>(ReceiveBuffer);
+    const int available = static_cast<int>(ReceiveBuffer.size());
+    auto Data = safe_cast<PITEM_EXTENDED_BASE>(ReceiveBuffer, "item");
+    if (Data == nullptr)
+    {
+        return available;
+    }
+
     int size = 5;
     if (Data->OptionFlags & ItemOptionFlags::HasOption)
     {
@@ -1841,11 +1851,16 @@ int CalcItemLength(std::span<const BYTE> ReceiveBuffer)
 
     if (Data->OptionFlags & ItemOptionFlags::HasSockets)
     {
-        auto socketCount = ReceiveBuffer[size] & 0xF;
+        const int socketCount = size < available ? ReceiveBuffer[size] & 0xF : 0;
         size++;
         size += socketCount;
     }
 
+    if (size > available)
+    {
+        g_ConsoleDebug->Write(MCD_ERROR, L"Item data cut short: %d of %d bytes", available, size);
+        return available;
+    }
     return size;
 }
 
@@ -12367,25 +12382,36 @@ void ReceiveCursedTempleHolyItemRelics(const BYTE* ReceiveBuffer)
 {
 }
 
-void ReceiveCursedTempleGameResult(const BYTE* ReceiveBuffer)
+void ReceiveCursedTempleGameResult(std::span<const BYTE> receiveBuffer)
 {
-    auto data = (LPPMSG_CURSED_TEMPLE_RESULT)ReceiveBuffer;
-
-    std::vector<UI::CursedTemple::PlayerResult> players;
-    players.reserve(data->btUserCount);
-    int Offset = sizeof(PMSG_CURSED_TEMPLE_RESULT);
-    for (int i = 0; i < data->btUserCount; ++i)
+    static_assert(sizeof(PMSG_CURSED_TEMPLE_RESULT) == Network::Packets::IllusionTempleResult::HeaderSize);
+    static_assert(sizeof(PMSG_CURSED_TEMPLE_USER_ADD_EXP) == Network::Packets::IllusionTempleResult::PlayerSize);
+    static_assert(offsetof(PMSG_CURSED_TEMPLE_USER_ADD_EXP, btClass) == 12);
+    const auto result = Network::Packets::ParseIllusionTempleResult(receiveBuffer);
+    if (!result)
     {
-        auto player = (LPPMSG_CURSED_TEMPLE_USER_ADD_EXP)(ReceiveBuffer + Offset);
-        wchar_t name[MAX_USERNAME_SIZE + 1]{};
-        CMultiLanguage::ConvertFromUtf8(name, player->GameId, MAX_USERNAME_SIZE);
-        players.push_back({ name, player->byMapNumber, static_cast<SEASON3A::eCursedTempleTeam>(player->btTeam),
-                            gCharacterManager.ChangeServerClassTypeToClientClassType(player->btClass),
-                            player->nAddExp });
-        Offset += sizeof(PMSG_CURSED_TEMPLE_USER_ADD_EXP);
+        mu::log::Get("network")->warn("NET: Invalid Illusion Temple result packet dropped");
+        return;
     }
 
-    UI::CursedTemple::ShowMatchResult({ data->btAlliedPoint, data->btIllusionPoint, players });
+    std::vector<UI::CursedTemple::PlayerResult> players;
+    players.reserve(result->playerCount);
+    bool unknownClass = false;
+    for (const auto& player : std::span(result->players).first(result->playerCount))
+    {
+        wchar_t name[MAX_USERNAME_SIZE + 1]{};
+        CMultiLanguage::ConvertFromUtf8(name, player.name.data(), MAX_USERNAME_SIZE);
+        unknownClass |= !player.playerClass.has_value();
+        players.push_back(
+            {name, player.mapNumber, static_cast<SEASON3A::eCursedTempleTeam>(player.team),
+             gCharacterManager.ChangeServerClassTypeToClientClassType(player.playerClass.value_or(DarkWizard)),
+             player.addedExperience});
+    }
+    if (unknownClass)
+        mu::log::Get("network")->warn(
+            "NET: Illusion Temple result contains an unknown packed class; using Dark Wizard");
+
+    UI::CursedTemple::ShowMatchResult({result->alliedPoints, result->illusionPoints, players});
 }
 
 void ReceiveCursedTempleState(const BYTE* ReceiveBuffer)
@@ -14857,7 +14883,7 @@ static void ProcessPacket(const BYTE* ReceiveBuffer, int32_t Size)
             ReceiveCursedTempleEnterInfo(ReceiveBuffer);
             break;
         case 0x04:
-            ReceiveCursedTempleGameResult(ReceiveBuffer);
+            ReceiveCursedTempleGameResult(received_span);
             break;
         case 0x06:
             ReceiveCursedTempSkillPoint(ReceiveBuffer);

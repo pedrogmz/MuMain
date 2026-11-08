@@ -2,6 +2,7 @@
 #include "Render/Sprites/GlobalBitmap.h"
 #include "Render/Renderer/BitmapUpload.h"
 #include "Render/Renderer/MuRenderer.h"
+#include "../data/ClientFolderScope.h"
 
 #include <doctest.h>
 #include <turbojpeg.h>
@@ -19,6 +20,9 @@
 
 namespace
 {
+// The image-type field follows the four-byte OZT prefix and two TGA header bytes.
+constexpr std::size_t OztImageTypeOffset = 4 + 2;
+constexpr std::uint8_t UncompressedTrueColor = 2;
 struct UploadRecord
 {
     std::vector<std::uint8_t> pixels;
@@ -67,8 +71,9 @@ std::filesystem::path MakeFixtureDir(const char* name)
 // `shade` is added to every channel, so two files can be told apart by their pixels.
 void WriteTga(const std::filesystem::path& path, std::uint8_t shade = 0)
 {
-    // OZT has sixteen prefix bytes followed by width/height, depth and pixels.
+    // OZT has a four-byte prefix followed by the 18-byte TGA header and pixels.
     std::array<std::uint8_t, 22 + 16> bytes{};
+    bytes[OztImageTypeOffset] = UncompressedTrueColor;
     bytes[16] = 2;
     bytes[18] = 2;
     bytes[20] = 32;
@@ -108,26 +113,6 @@ void WriteJpeg(const std::filesystem::path& path)
     tjFree(compressed);
     tjDestroy(handle);
 }
-
-// Runs a test from inside its fixture folder, as the game runs from the client
-// folder: texture paths start with Data.
-class ClientFolderScope
-{
-public:
-    explicit ClientFolderScope(const std::filesystem::path& folder) : m_previous(std::filesystem::current_path())
-    {
-        std::filesystem::current_path(folder);
-    }
-    ~ClientFolderScope()
-    {
-        std::filesystem::current_path(m_previous);
-    }
-    ClientFolderScope(const ClientFolderScope&) = delete;
-    ClientFolderScope& operator=(const ClientFolderScope&) = delete;
-
-private:
-    std::filesystem::path m_previous;
-};
 
 // A fixture folder for one test, emptied first and removed afterwards.
 struct FixtureFolder
