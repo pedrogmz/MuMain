@@ -416,9 +416,16 @@ target_include_directories(MuClient PUBLIC
 # RmlUi_Platform_SDL.h's SDL2-vs-SDL3 API switch -- this project is SDL3-only.
 target_compile_definitions(MuClient PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
 
-# Multisampled RmlUi layers trigger device loss on reported NVIDIA/Vulkan runs.
-# Use single-sampled UI by default on every driver; keep MSAA opt-in for diagnosis.
-set(RMLUI_SDL_GPU_NUM_MSAA_SAMPLES "1" CACHE STRING "RmlUi layer samples (1 disables MSAA)")
+# Multisampled RmlUi layers trigger device loss on reported NVIDIA/Vulkan runs, so the native
+# client keeps single-sampled UI by default (MSAA stays opt-in for diagnosis). The browser build
+# runs on WebGPU, not that Vulkan path, and without MSAA its rounded UI borders are visibly
+# stair-stepped, so it defaults to 4 samples.
+if(EMSCRIPTEN)
+  set(MU_RMLUI_MSAA_DEFAULT "4")
+else()
+  set(MU_RMLUI_MSAA_DEFAULT "1")
+endif()
+set(RMLUI_SDL_GPU_NUM_MSAA_SAMPLES "${MU_RMLUI_MSAA_DEFAULT}" CACHE STRING "RmlUi layer samples (1 disables MSAA)")
 set(MU_RMLUI_MSAA_SAMPLE_COUNTS 1 2 4 8)
 set_property(CACHE RMLUI_SDL_GPU_NUM_MSAA_SAMPLES PROPERTY STRINGS ${MU_RMLUI_MSAA_SAMPLE_COUNTS})
 if(NOT RMLUI_SDL_GPU_NUM_MSAA_SAMPLES IN_LIST MU_RMLUI_MSAA_SAMPLE_COUNTS)
