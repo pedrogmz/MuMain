@@ -145,3 +145,73 @@
 .attr-lines span { color: token(text-primary); }
 .attr-lines span.boosted { color: rgb(100, 150, 255); }
 .attr-lines span.buffed { color: token(accent-gold); }
+
+/* --------------------------------------------------------------------------
+   Sharp text: every text leaf lays out at the physical size (reference px
+   times --root-scale) and cancels #panel's scale around the edge or centre
+   its text is aligned to, so glyphs are rasterised at the size they are shown
+   (base.rcss's "Sharp text" block). Positions stay in reference px.
+   -------------------------------------------------------------------------- */
+#name, #classname, #servername {
+	width: calc(100% * var(--root-scale, 1));
+	margin-left: calc(50% - 50% * var(--root-scale, 1));
+	white-space: nowrap;
+	transform-origin: center top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+#name { font-size: calc(12px * var(--root-scale, 1)); }
+#classname, #servername { font-size: calc(11px * var(--root-scale, 1)); }
+
+.level-text, .levelup-point-text, .exp-text, .point-probability-text, .point-text {
+	font-size: calc(10px * var(--root-scale, 1));
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+
+.attr-label, .attr-value {
+	font-size: calc(12px * var(--root-scale, 1));
+	white-space: nowrap;
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+.attr-label { width: calc(74px * var(--root-scale, 1)); }
+/* left:86 / right:18 as an explicit width, so the counter-scaled box keeps its span. */
+.attr-value { right: auto; width: calc((100% - 104px) * var(--root-scale, 1)); }
+
+.attr-lines {
+	width: calc(160px * var(--root-scale, 1));
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+.attr-lines span {
+	line-height: calc(13px * var(--root-scale, 1));
+	font-size: calc(12px * var(--root-scale, 1));
+}
+
+/* Stat rows: the label, value and "+" share the 21px capsule's vertical centre. The label and
+   value take the capsule's top and a line box as tall as it; the "+" is a 16px square (14px plus
+   its 1px border) 2.5px inside the capsule, laid out at the physical size and scaled back around
+   its right edge, so its circle and glyph are drawn at the size they are shown. */
+.attr-label, .attr-value { line-height: calc(21px * var(--root-scale, 1)); }
+.attr-label-str, .attr-value-str { top: 120px; }
+.attr-label-agi, .attr-value-agi { top: 175px; }
+.attr-label-vit, .attr-value-vit { top: 240px; }
+.attr-label-ene, .attr-value-ene { top: 295px; }
+.attr-label-cmd, .attr-value-cmd { top: 350px; }
+.stat-btn {
+	width: calc(14px * var(--root-scale, 1));
+	height: calc(14px * var(--root-scale, 1));
+	border-width: calc(1px * var(--root-scale, 1));
+	padding: 0;
+	line-height: calc(14px * var(--root-scale, 1));
+	font-size: calc(12px * var(--root-scale, 1));
+	font-family: "DejaVu Sans";
+	text-align: center;
+	transform-origin: right top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+.stat-btn-str { top: 122.5px; }
+.stat-btn-agi { top: 177.5px; }
+.stat-btn-vit { top: 242.5px; }
+.stat-btn-ene { top: 297.5px; }
+.stat-btn-cmd { top: 352.5px; }

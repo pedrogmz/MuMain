@@ -1173,3 +1173,49 @@ input, select, textarea, .btn, [data-event-click] { drag: block; }
 	pointer-events: auto;
 	z-index: 1;
 }
+
+/* ============================================================================
+   Sharp text in panels scaled by transform: scale(root_scale)
+   ----------------------------------------------------------------------------
+   RmlUi rasterises glyphs at the computed font-size and ignores transforms, so
+   text inside a placed panel was drawn at reference size and stretched by the
+   panel's scale (blurry at 1.5-2x). These shared text leaves now lay out at
+   the physical size -- font-size and their own lengths are reference px times
+   --root-scale -- and cancel the panel's scale around the edge or centre their
+   text is aligned to. On screen the size and position are unchanged; body sets
+   --root-scale: 1, so an unscaled document is unaffected.
+   ============================================================================ */
+.modern-header-title-px {
+	font-size: calc(13px * var(--root-scale, 1));
+	white-space: nowrap;
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+.modern-wallet-label-px {
+	font-size: calc(7px * var(--root-scale, 1));
+	white-space: nowrap;
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+.modern-wallet-value-px {
+	width: calc(110px * var(--root-scale, 1));
+	font-size: calc(10px * var(--root-scale, 1));
+	transform-origin: right top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
+/* The glyph is centred on its button: a wide layer whose centre sits on the
+   button's centre, scaled back around that centre (base's .sharp-centre and
+   .sharp-middle, written out). */
+.modern-icon-btn-glyph-px {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 2000px;
+	margin-left: -1000px;
+	text-align: center;
+	white-space: nowrap;
+	line-height: 1.2;
+	font-size: calc(12px * var(--root-scale, 1));
+	transform-origin: center center;
+	transform: translateY(-50%) scale(calc(1 / var(--root-scale, 1)));
+}

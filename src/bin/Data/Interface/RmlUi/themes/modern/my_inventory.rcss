@@ -195,3 +195,14 @@
 /* The grid's clicks are native (CInventoryCtrl), so the placed panel takes no pointer events; its
    controls take their own. */
 #panel.slot-placed { pointer-events: none; }
+
+/* Sharp text: the option labels lay out at the physical size and cancel #panel's scale around
+   their top-left corner, so they keep their 95x12 box (and hover area) on screen. */
+.option-label {
+	width: calc(95px * var(--root-scale, 1));
+	height: calc(12px * var(--root-scale, 1));
+	font-size: calc(10px * var(--root-scale, 1));
+	white-space: nowrap;
+	transform-origin: left top;
+	transform: scale(calc(1 / var(--root-scale, 1)));
+}
