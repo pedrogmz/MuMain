@@ -514,16 +514,12 @@ void Connection::OnPacketReceived(const BYTE* data, const int32_t size)
 
 void Connection_SendRaw(int32_t handle, const BYTE* data, int32_t size)
 {
-    const auto it = connections.find(handle);
-    if (it != connections.end() && it->second != nullptr)
+    if (Connections().Dispatch(handle, [data, size](Connection& connection) { connection.Send(data, size); }))
     {
-        it->second->Send(data, size);
+        return;
     }
 #ifdef __EMSCRIPTEN__
-    else
-    {
-        Wasm_Send(handle, data, size);
-    }
+    Wasm_Send(handle, data, size);
 #endif
 }
 
