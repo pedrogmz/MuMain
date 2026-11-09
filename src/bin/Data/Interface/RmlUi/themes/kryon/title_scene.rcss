@@ -1,0 +1,17 @@
+/* Kryon theme: forked from themes/modern/title_scene.rcss. The structure and selectors are modern's;
+   the literal palette below is remapped to Kryon's warm obsidian and gilded bronze. Keep this file in
+   step when the modern original changes. */
+
+/* Modern theme for TitleSceneUI's splash-screen loading bar -- flat/gradient fill via the internal
+   `fill` element <progress> generates; same positioning as legacy. */
+
+.gauge-fill {
+	position: absolute;
+	/* left/top/width/height pushed from C++. */
+}
+/* Reuses main_frame.rcss's modern-theme AG-gauge amber gradient (literal hex, matching that
+   file's convention for gauge fills). */
+.gauge-fill fill {
+	background-color: token(resource-ag);
+	decorator: linear-gradient(to bottom, #ffd944, token(resource-ag) 45%, #8a6428);
+}

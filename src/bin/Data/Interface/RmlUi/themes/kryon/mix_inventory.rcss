@@ -1,0 +1,284 @@
+/* Kryon theme: forked from themes/modern/mix_inventory.rcss. The structure and selectors are modern's;
+   the literal palette below is remapped to Kryon's warm obsidian and gilded bronze. Keep this file in
+   step when the modern original changes. */
+
+/* Modern theme for CMixInventory's chrome -- header/Mix button are vector forged-metal chrome
+   (matching Login/SysMenu/MyInventory/StorageExt's forged-dialog language). Recipe-result content
+   (SyncMixContentModel(), MixInventory.cpp) and the socket list box are RmlUi too now. Only the
+   inventory grid stays fully native. */
+
+#panel {
+	position: absolute;
+	transform-origin: left top;
+	width: 190px;
+	height: 429px;
+	font-family: "token(font-body)";
+}
+
+/* Same top/height as MyInventory's own .inv-header-rail -- this window's frame art is the SAME
+   asset (newui_item_back04.tga, see the frame's comment). The grid itself doesn't
+   start until `m_Pos.y + 110` (MixInventory.cpp's CInventoryCtrl::Create() call), well past this
+   rail's 43px bottom edge -- the 44-110px gap is .mix-tax-rate/.mix-content below. */
+.mix-header-rail {
+	top: 7px;
+	height: 36px;
+}
+
+/* Former RenderFrame()/RenderMixDescriptions() native text block -- .mix-content's children stack
+   via normal block flow instead of RenderFrame()'s own hand-accumulated fLine_y stepping. Per-line
+   color still comes from C++ (data-style-color) since it's a live gameplay signal
+   (ready/not-ready, source-satisfied/missing), not a theme choice -- same reasoning as legacy's
+   own copy of this rule block. */
+.mix-tax-rate {
+	position: absolute;
+	left: 15px;
+	top: 48px;
+	width: 160px;
+	text-align: center;
+	color: token(text-primary);
+	font-weight: 600;
+	font-size: 12px;
+}
+.mix-content {
+	position: absolute;
+	left: 15px;
+	top: 70px;
+	width: 160px;
+	bottom: 40px;
+	overflow: hidden auto;
+}
+.mix-line {
+	display: block;
+	width: 100%;
+	text-align: center;
+	margin-bottom: 3px;
+	font-weight: 600;
+	font-size: 12px;
+	color: token(text-primary);
+}
+.mix-socket-prompt { color: token(text-secondary); }
+/* The socket pane counter-scales so scrollbar input uses physical pixels. */
+.socket-list-box { position: absolute; left: 14px; top: 294px; width: 161px; height: 67px; background-color: token(surface-recessed); }
+#socket_list { position: absolute; left: 15px; top: 295px; transform-origin: left top; overflow: hidden scroll; }
+.socket-row { position: relative; display: block; pointer-events: auto; }
+.socket-row-back { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.socket-row.selected .socket-row-back { background-color: token(surface-raised); }
+.socket-line-text { position: absolute; left: 5.4%; top: 0; white-space: nowrap; color: token(text-primary); }
+.socket-row.selected .socket-line-text { color: token(text-warm); }
+
+/* .mix-line's display: block outranks base.rcss's .hidden (same specificity, later rule), so a
+   hidden line kept showing its last text -- the previous mix type's prediction, success rate and
+   socket prompt. */
+.mix-line.hidden { display: none; }
+
+/* Single Mix button, centered: (190-37)/2, same family default size as every other
+   CInventoryCtrl-owning window's icon buttons (base.rcss's .modern-icon-btn-px comment) -- not a
+   pixel match for the native 44x35 sprite, same convention as StorageExt/MyInventory's own
+   buttons. */
+.mix-btn-mix {
+	left: 77px;
+	color: #e9c987;
+	border-color: #b08248;
+}
+
+.mix-recipe { color: token(semantic-danger); }
+.mix-recipe.ready { color: token(accent-gold); }
+.mix-success { color: token(text-secondary); }
+.mix-success.boosted { color: token(accent-gold); }
+.mix-kind.missing { color: token(semantic-danger); }
+.mix-kind.partial { color: token(text-secondary); }
+.mix-kind.ready { color: token(accent-gold); }
+.mix-kind.normal { color: token(text-primary); }
+.mix-kind.warning { color: token(semantic-danger); }
+.mix-kind.loss { color: token(semantic-danger); }
+.mix-kind.dim { color: token(text-muted); }
+
+/* Native item grid: the first cell's top-left, in #panel's units. */
+.native-anchor { position: absolute; pointer-events: none; }
+#item_grid, #item_grid_counts { left: 15px; top: 110px; width: calc(8 * var(--item-cell)); height: calc(4 * var(--item-cell)); }
+
+/* The frame. */
+.bg-panel {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 190px;
+	height: 429px;
+	pointer-events: none;
+	border-radius: token(radius-sm)px;
+	background-color: #0b0806;
+	decorator: linear-gradient(to bottom, #15100c 0%, #0b0806 100%);
+	border-width: 1px;
+	border-color: token(border-frame);
+	box-shadow:
+		0 11px 30px rgba(0, 0, 0, 158),
+		0 2px 5px rgba(0, 0, 0, 217),
+		inset 0 0 0 1px #080604,
+		inset 0 0 0 3px rgba(224, 177, 88, 190);
+}
+
+.inv-shell-edge {
+	position: absolute;
+	left: -3px;
+	right: -3px;
+	top: -3px;
+	bottom: -3px;
+	pointer-events: none;
+	background-color: transparent;
+	border-radius: token(radius-sm)px;
+	border-width: 1px;
+	border-color: rgba(36, 26, 18, 242);
+	box-shadow:
+		inset 1px 0 0 rgba(224, 177, 88, 110),
+		inset -1px 0 0 rgba(0, 0, 0, 204),
+		inset 0 1px 0 rgba(255, 216, 135, 90),
+		inset 0 -1px 0 rgba(0, 0, 0, 230);
+}
+
+.inv-groove {
+	position: absolute;
+	left: 4px;
+	right: 4px;
+	top: 4px;
+	bottom: 4px;
+	pointer-events: none;
+	border-width: 1px;
+	border-color: #2a1e14;
+	box-shadow:
+		inset 0 0 0 1px rgba(224, 177, 88, 40),
+		inset 0 0 12px rgba(0, 0, 0, 153);
+}
+
+/* Rail fill/accent relocated from the fg's now paint-less .modern-header-rail-px -- see
+   base.rcss's comment on that class. top/height match .mix-header-rail (mix_inventory.rcss). */
+.rail-fill {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	top: 7px;
+	height: 36px;
+	pointer-events: none;
+	background-color: token(metal-dark);
+	decorator:
+		linear-gradient(to bottom, rgba(255, 216, 135, 16), transparent 31%),
+		linear-gradient(to bottom, token(metal-rail), #1c1814 45%, token(metal-rail-dark));
+	border-width: 1px;
+	border-color: token(border-rail);
+	border-bottom-color: #16100b;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 228, 163, 22),
+		inset 0 -1px 0 #000000,
+		0 2px 4px rgba(0, 0, 0, 133);
+}
+/* Nested inside .rail-fill -- its left/right/bottom resolve against that box. */
+.rail-accent {
+	position: absolute;
+	left: 7px;
+	right: 7px;
+	bottom: 2px;
+	height: 1px;
+	pointer-events: none;
+	opacity: 0.35;
+	decorator: linear-gradient(to right,
+		transparent,
+		token(metal-warm-edge) 30%,
+		#b99a63 50%,
+		token(metal-warm-edge) 70%,
+		transparent);
+}
+
+/* Lengths inside counter-scaled layers: reference px times the panel's --root-scale. */
+#socket_list { width: calc(160px * var(--root-scale)); height: calc(65px * var(--root-scale)); font-size: calc(11px * var(--root-scale)); }
+.socket-row { width: calc(148px * var(--root-scale)); height: calc(13px * var(--root-scale)); }
+
+/* The grid's clicks are native (CInventoryCtrl), so the placed panel takes no pointer events; its
+   controls take their own. */
+#panel.slot-placed { pointer-events: none; }
+
+/* --------------------------------------------------------------------------
+   Kryon inventory-family chrome: the loader shell's double gold ring around a
+   warm obsidian plate. Paint only -- dimensions and placement stay above.
+   -------------------------------------------------------------------------- */
+.bg-panel {
+	background-color: #0d0906;
+	decorator:
+		radial-gradient(ellipse at top, rgba(202, 132, 38, 34), transparent 64%),
+		linear-gradient(120deg, rgba(28, 24, 20, 247), rgba(5, 8, 11, 247));
+	border-color: #e0b158;
+	box-shadow:
+		0 0 0 3px #050403,
+		0 0 0 4px #8a5f2e,
+		inset 0 0 0 6px #0b0806,
+		inset 0 0 0 7px rgba(160, 110, 60, 60),
+		0 18px 46px rgba(0, 0, 0, 170);
+}
+.inv-shell-edge {
+	border-color: rgba(36, 26, 18, 242);
+	box-shadow:
+		inset 1px 0 0 rgba(255, 216, 135, 90),
+		inset -1px 0 0 rgba(0, 0, 0, 204),
+		inset 0 1px 0 rgba(255, 216, 135, 80),
+		inset 0 -1px 0 rgba(0, 0, 0, 230);
+}
+.inv-groove {
+	border-color: #3a2b1c;
+	box-shadow:
+		inset 0 0 0 1px rgba(224, 177, 88, 40),
+		inset 0 0 12px rgba(0, 0, 0, 153);
+}
+.rail-fill {
+	background-color: #17110c;
+	decorator:
+		linear-gradient(to bottom, rgba(255, 216, 135, 18), transparent 31%),
+		linear-gradient(to bottom, token(metal-rail), #1c1814 45%, token(metal-rail-dark));
+	border-color: #7a5429;
+	border-bottom-color: #16100b;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 228, 163, 30),
+		inset 0 -1px 0 #000000,
+		0 2px 4px rgba(0, 0, 0, 133);
+}
+/* --------------------------------------------------------------------------
+   Kryon inventory family: warm obsidian plate, rounded gold frame, top sheen.
+   -------------------------------------------------------------------------- */
+.bg-panel {
+	background-color: #0b0806;
+	decorator:
+		radial-gradient(circle at 70% 20%, rgba(184, 112, 43, 26), transparent 40%),
+		linear-gradient(to bottom, rgba(24, 20, 18, 247), rgba(5, 5, 6, 250));
+	border-color: rgba(163, 111, 61, 217);
+	border-radius: 14px;
+	box-shadow:
+		0 24px 70px rgba(0, 0, 0, 199),
+		inset 0 0 0 2px rgba(0, 0, 0, 173);
+}
+.inv-shell-edge {
+	border-color: rgba(36, 26, 18, 242);
+	border-radius: 18px;
+	box-shadow:
+		inset 1px 0 0 rgba(255, 216, 135, 90),
+		inset -1px 0 0 rgba(0, 0, 0, 204),
+		inset 0 1px 0 rgba(255, 228, 163, 80),
+		inset 0 -1px 0 rgba(0, 0, 0, 230);
+}
+.inv-groove {
+	border-color: #3a2b1c;
+	border-radius: 13px;
+	box-shadow:
+		inset 0 0 0 1px rgba(224, 177, 88, 40),
+		inset 0 0 12px rgba(0, 0, 0, 153);
+}
+.rail-fill {
+	background-color: #17110c;
+	decorator:
+		linear-gradient(to bottom, rgba(255, 216, 135, 22), transparent 31%),
+		linear-gradient(to bottom, token(metal-rail), #1c1814 45%, token(metal-rail-dark));
+	border-color: #6b4a2a;
+	border-top-color: #c08a44;
+	border-bottom-color: #16100b;
+	border-radius: 8px;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 228, 163, 30),
+		inset 0 -1px 0 #000000,
+		0 2px 6px rgba(0, 0, 0, 133);
+}
