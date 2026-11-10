@@ -17,7 +17,8 @@ paint their own literal surfaces.
   palette at the end. When the modern original changes, re-sync the fork (or delete it when the
   change no longer needs a Kryon override).
 - `tokens.ini` only changes the palette, radii and fonts; unset keys inherit from modern.
-- The theme adds no C++ and no `[Capabilities]`; layout and behaviour stay modern's.
+- The theme adds no C++ and no `[Capabilities]`; layout and behaviour stay modern's, except the
+  main HUD's layout (see HUD art below).
 
 ## Direction
 
@@ -141,6 +142,21 @@ shared pass cannot reach.
 Run `python tools/check_rml_rcss_drift.py` after changing a forked `.rcss`; it checks the
 required ids, callbacks and model fields. Visual structure and interaction still need a client
 check at more than one resolution and UI scale.
+
+## HUD art
+
+The main HUD (`main_frame.rcss`) does not follow modern's flat strip: it draws the life and mana
+orbs at the ends, the SD and AG orbs at their feet and a ten-slot bronze skill bar between them
+(the four item hotkeys, the five skill hotkeys and the current skill), with the experience line in
+the bar's lower rail and the tenth of the level on its gem. The textures are in `hud/`, cut from
+the Season 6 HUD asset pack by `tools/kryon_theme/make_kryon_hud_textures.py`, which writes them as
+OZT (the only container the engine reads for `.tga` paths) and prints the geometry the stylesheet
+places the parts with. Re-run it with the pack's folder to rebuild them:
+`python tools/kryon_theme/make_kryon_hud_textures.py PATH_TO_PACK` (needs Pillow, NumPy and SciPy).
+
+The orb frames are drawn with empty glass; each gauge shows its glass texture (`orb_*_fill`) from
+the bottom up to its level, so the fill follows the glass, not the whole orb. The layout keeps the
+shared `main_frame.rml`: if a part is added there, place or hide it here.
 
 ## Rules for changes
 
