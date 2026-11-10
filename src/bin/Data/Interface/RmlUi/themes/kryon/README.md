@@ -158,6 +158,26 @@ The orb frames are drawn with empty glass; each gauge shows its glass texture (`
 the bottom up to its level, so the fill follows the glass, not the whole orb. The layout keeps the
 shared `main_frame.rml`: if a part is added there, place or hide it here.
 
+## Window art
+
+The windows reuse the same pack, sparingly, through `ui/` (cut by
+`tools/kryon_theme/make_kryon_window_textures.py`, which prints each piece's ninepatch rects):
+
+| Piece | Where |
+|---|---|
+| Ring with gold corner gems (`frame`) | `.modern-shell-edge`, `.inv-shell-edge`: every framed window's edge |
+| Bar frame (`header`) and winged gem (`joint`) | Header rails and the joint over them |
+| Item slot (`slot`, `slot_ring`) | Equipment slots; the inventory cells (the hollow ring, so the cell tint shows) |
+| Dark plate (`panel`) | Chat backdrop, the character sheet's summary |
+| Gem-ended rail (`divider`) | The character sheet's stat rows, which separate the attributes |
+| Rounded plate (`button`, `button_hover`) | `.btn`, `.btn-icon`, `.modern-btn-px`, `.modern-icon-btn-px` |
+| Row plate (`bar`) | The gold strip (`.modern-wallet-px`) |
+
+The shared rules are at the end of `base.rcss` ("Kryon art pass"), with `body ...` selectors so they
+win over each window's palette rules. Every piece is a `ninepatch(...)` with explicit edges: a
+sprite's natural size follows the context's dp ratio, which the panels that scale themselves
+(reference px) would apply twice.
+
 ## Rules for changes
 
 - Every new colour traces to a token in `tokens.ini`; add the token and its meaning here first.

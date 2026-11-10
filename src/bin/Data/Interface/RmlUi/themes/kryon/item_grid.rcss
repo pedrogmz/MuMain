@@ -69,3 +69,9 @@ body { --item-cell: 20px; }
 	box-shadow: inset 0 0 8px rgba(0, 0, 0, 180);
 	border-color: rgba(163, 111, 61, 217);
 }
+/* Kryon art pass (base.rcss): each cell is the HUD's item slot's frame, small; the
+   cell's tint shows through its well. */
+.item-cell-art {
+	border-color: transparent;
+	decorator: ninepatch(kryon-slot-ring, kryon-slot-ring-inner, 4px 4px 4px 4px);
+}
