@@ -254,3 +254,18 @@
 .stat-btn-vit { top: 242.5px; }
 .stat-btn-ene { top: 297.5px; }
 .stat-btn-cmd { top: 352.5px; }
+
+/* --------------------------------------------------------------------------
+   Kryon art pass (base.rcss): the summary is a dark plate, each stat row the
+   gem-ended rail, which also separates one attribute from the next.
+   -------------------------------------------------------------------------- */
+.summary-fill {
+	background-color: transparent;
+	border-color: transparent;
+	decorator: ninepatch(kryon-panel, kryon-panel-inner, 8px 9px 8px 9px);
+}
+.attr-textbox {
+	background-color: transparent;
+	border-color: transparent;
+	decorator: ninepatch(kryon-rail, kryon-rail-inner, 6px 14px 6px 14px);
+}

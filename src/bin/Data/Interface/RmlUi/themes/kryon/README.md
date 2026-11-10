@@ -17,7 +17,8 @@ paint their own literal surfaces.
   palette at the end. When the modern original changes, re-sync the fork (or delete it when the
   change no longer needs a Kryon override).
 - `tokens.ini` only changes the palette, radii and fonts; unset keys inherit from modern.
-- The theme adds no C++ and no `[Capabilities]`; layout and behaviour stay modern's.
+- The theme adds no C++ and no `[Capabilities]`; layout and behaviour stay modern's, except the
+  main HUD's layout (see HUD art below).
 
 ## Direction
 
@@ -141,6 +142,41 @@ shared pass cannot reach.
 Run `python tools/check_rml_rcss_drift.py` after changing a forked `.rcss`; it checks the
 required ids, callbacks and model fields. Visual structure and interaction still need a client
 check at more than one resolution and UI scale.
+
+## HUD art
+
+The main HUD (`main_frame.rcss`) does not follow modern's flat strip: it draws the life and mana
+orbs at the ends, the SD and AG orbs at their feet and a ten-slot bronze skill bar between them
+(the four item hotkeys, the five skill hotkeys and the current skill), with the experience line in
+the bar's lower rail and the tenth of the level on its gem. The textures are in `hud/`, cut from
+the Season 6 HUD asset pack by `tools/kryon_theme/make_kryon_hud_textures.py`, which writes them as
+OZT (the only container the engine reads for `.tga` paths) and prints the geometry the stylesheet
+places the parts with. Re-run it with the pack's folder to rebuild them:
+`python tools/kryon_theme/make_kryon_hud_textures.py PATH_TO_PACK` (needs Pillow, NumPy and SciPy).
+
+The orb frames are drawn with empty glass; each gauge shows its glass texture (`orb_*_fill`) from
+the bottom up to its level, so the fill follows the glass, not the whole orb. The layout keeps the
+shared `main_frame.rml`: if a part is added there, place or hide it here.
+
+## Window art
+
+The windows reuse the same pack, sparingly, through `ui/` (cut by
+`tools/kryon_theme/make_kryon_window_textures.py`, which prints each piece's ninepatch rects):
+
+| Piece | Where |
+|---|---|
+| Ring with gold corner gems (`frame`) | `.modern-shell-edge`, `.inv-shell-edge`: every framed window's edge |
+| Bar frame (`header`) and winged gem (`joint`) | Header rails and the joint over them |
+| Item slot (`slot`, `slot_ring`) | Equipment slots; the inventory cells (the hollow ring, so the cell tint shows) |
+| Dark plate (`panel`) | Chat backdrop, the character sheet's summary |
+| Gem-ended rail (`divider`) | The character sheet's stat rows, which separate the attributes |
+| Rounded plate (`button`, `button_hover`) | `.btn`, `.btn-icon`, `.modern-btn-px`, `.modern-icon-btn-px` |
+| Row plate (`bar`) | The gold strip (`.modern-wallet-px`) |
+
+The shared rules are at the end of `base.rcss` ("Kryon art pass"), with `body ...` selectors so they
+win over each window's palette rules. Every piece is a `ninepatch(...)` with explicit edges: a
+sprite's natural size follows the context's dp ratio, which the panels that scale themselves
+(reference px) would apply twice.
 
 ## Rules for changes
 

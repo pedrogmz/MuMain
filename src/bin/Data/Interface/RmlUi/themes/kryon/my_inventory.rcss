@@ -242,3 +242,8 @@
 	transform-origin: left top;
 	transform: scale(calc(1 / var(--root-scale, 1)));
 }
+
+/* Kryon art pass (base.rcss): the header plate ends above the Set/Socket option labels (top 32),
+   and the title is centred in it. */
+body .rail-fill { height: 24px; }
+body .inv-header-rail { height: 24px; }

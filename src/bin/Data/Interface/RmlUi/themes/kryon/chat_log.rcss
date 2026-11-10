@@ -151,3 +151,10 @@
 	color: #ffe4a3;
 	border-left-color: #ffd988;
 }
+/* Kryon art pass (base.rcss): the framed chat is a dark plate in a bronze edge. */
+#chat_backdrop {
+	background-color: transparent;
+	border-color: transparent;
+	decorator: ninepatch(kryon-panel, kryon-panel-inner, 8dp 9dp 8dp 9dp);
+	opacity: 0.88;
+}

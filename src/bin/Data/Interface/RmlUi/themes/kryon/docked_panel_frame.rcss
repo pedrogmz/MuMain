@@ -94,3 +94,13 @@
 	border-radius: 0;
 	box-shadow: none;
 }
+
+/* --------------------------------------------------------------------------
+   Kryon art pass (base.rcss): the ring with corner gems and the header plate,
+   in this panel's reference px.
+   -------------------------------------------------------------------------- */
+#panel { border-color: transparent; border-radius: 6px; }
+#panel > .modern-shell-edge {
+	left: -6px; right: -6px; top: -6px; bottom: -6px;
+	decorator: ninepatch(kryon-frame, kryon-frame-inner, 17px 17px 17px 17px);
+}

@@ -1992,3 +1992,136 @@ body {
 	transform-origin: center center;
 	transform: translateY(-50%) scale(calc(1 / var(--root-scale, 1)));
 }
+
+/* ============================================================================
+   Kryon art pass -- the HUD's bronze, on the windows
+   ----------------------------------------------------------------------------
+   The pieces in ui/ come from the same Season 6 asset pack as the HUD
+   (tools/kryon_theme/make_kryon_window_textures.py prints the rects below):
+   the ring with gold corner gems, the bar-frame header plate, the winged gem
+   over the header, the rounded button plate. Each is a ninepatch with
+   explicit edges -- dp here, px in the panels that scale themselves (their
+   own sheets override these with `body ...` selectors) -- so a sprite's
+   natural size, which follows the dp ratio, never sets a size.
+
+   Restraint: the ring and plates replace the vector edges they sit on; fills,
+   text colours and layout stay as they were.
+   ============================================================================ */
+@spritesheet kryon-ui-frame-sheet { src: ui/frame.tga;
+	kryon-frame: 0px 0px 82px 66px; kryon-frame-inner: 25px 25px 32px 16px; }
+@spritesheet kryon-ui-header-sheet { src: ui/header.tga;
+	kryon-header: 0px 0px 158px 31px; kryon-header-inner: 14px 8px 130px 15px; }
+@spritesheet kryon-ui-panel-sheet { src: ui/panel.tga;
+	kryon-panel: 0px 0px 127px 52px; kryon-panel-inner: 14px 13px 99px 26px; }
+@spritesheet kryon-ui-bar-sheet { src: ui/bar.tga;
+	kryon-bar: 0px 0px 111px 30px; kryon-bar-inner: 12px 8px 87px 14px; }
+@spritesheet kryon-ui-slot-sheet { src: ui/slot.tga;
+	kryon-slot: 0px 0px 40px 42px; kryon-slot-inner: 9px 9px 22px 24px; }
+@spritesheet kryon-ui-slot-ring-sheet { src: ui/slot_ring.tga;
+	kryon-slot-ring: 0px 0px 40px 42px; kryon-slot-ring-inner: 9px 9px 22px 24px; }
+@spritesheet kryon-ui-button-sheet { src: ui/button.tga;
+	kryon-button: 0px 0px 93px 26px; kryon-button-inner: 13px 8px 67px 10px; }
+@spritesheet kryon-ui-button-hover-sheet { src: ui/button_hover.tga;
+	kryon-button-hover: 0px 0px 93px 26px; kryon-button-hover-inner: 13px 8px 67px 10px; }
+/* The gem-ended rail: kryon-rail is the rail itself, stretched between its gems; kryon-divider
+   adds two transparent rows above it, so with a top edge of 0 it lies along a box's bottom. */
+@spritesheet kryon-ui-divider-sheet { src: ui/divider.tga;
+	kryon-divider: 0px 0px 145px 26px; kryon-divider-inner: 22px 0px 101px 2px;
+	kryon-rail: 0px 2px 145px 24px; kryon-rail-inner: 22px 8px 101px 10px; }
+
+/* The ring: the shell edge, widened to carry the corner gems over the panel's own corners. */
+body .modern-shell-edge {
+	left: -6dp; right: -6dp; top: -6dp; bottom: -6dp;
+	border-color: transparent;
+	border-radius: 0;
+	box-shadow: none;
+	decorator: ninepatch(kryon-frame, kryon-frame-inner, 17dp 17dp 17dp 17dp);
+}
+body .modern-groove { border-color: transparent; box-shadow: none; }
+
+/* Header plates. */
+body .modern-header-rail {
+	background-color: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	decorator: ninepatch(kryon-header, kryon-header-inner, 7dp 9dp 7dp 9dp);
+}
+body .modern-header-accent { display: none; }
+
+/* The winged gem crests the header, where the rotated stud was (hidden by the pass above). */
+body .modern-joint, body .modern-joint-px {
+	display: block;
+	transform: none;
+	background-color: transparent;
+	border-color: transparent;
+	border-width: 0;
+	box-shadow: none;
+}
+body .modern-joint { top: -9dp; width: 48dp; height: 13dp; margin-left: -24dp; decorator: image(ui/joint.tga); }
+body .modern-joint-px { top: -9px; width: 48px; height: 13px; margin-left: -24px; decorator: image(ui/joint.tga); }
+
+/* Buttons: the rounded bronze plate, lit on hover. The primary action keeps its gold by taking
+   the lit plate and gold lettering. */
+body .btn, body .btn-icon {
+	background-color: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	decorator: ninepatch(kryon-button, kryon-button-inner, 7dp 9dp 7dp 9dp);
+}
+body .btn:hover, body .btn-icon:hover {
+	decorator: ninepatch(kryon-button-hover, kryon-button-hover-inner, 7dp 9dp 7dp 9dp);
+}
+body .modern-btn-px, body .modern-icon-btn-px {
+	background-color: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	decorator: ninepatch(kryon-button, kryon-button-inner, 7px 9px 7px 9px);
+}
+body .modern-btn-px:hover, body .modern-icon-btn-px:hover {
+	decorator: ninepatch(kryon-button-hover, kryon-button-hover-inner, 7px 9px 7px 9px);
+}
+body .btn.btn-ok, body .btn-icon.btn-icon-primary {
+	color: token(accent-gold-hover);
+	decorator: ninepatch(kryon-button-hover, kryon-button-hover-inner, 7dp 9dp 7dp 9dp);
+}
+body .btn.btn-ok:hover, body .btn-icon.btn-icon-primary:hover { color: #fff3d2; }
+body .btn-icon.btn-icon-primary .btn-icon-label { color: token(accent-gold-hover); }
+
+/* The gold strip: a row plate. */
+body .modern-wallet-px {
+	background-color: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	decorator: ninepatch(kryon-bar, kryon-bar-inner, 6px 8px 6px 8px);
+}
+
+/* The corners the ring now draws: the fills it sits on keep only a small radius. */
+body .modern-frame, body .modern-frame-crimson { border-radius: 6dp; }
+
+/* The inventory family's px shell (my_inventory, trade, storage, shops, mix, ...): the same ring
+   and header plate in reference px. */
+body .bg-panel { border-color: transparent; border-radius: 6px; }
+body .inv-shell-edge {
+	left: -6px; right: -6px; top: -6px; bottom: -6px;
+	border-color: transparent;
+	border-radius: 0;
+	box-shadow: none;
+	decorator: ninepatch(kryon-frame, kryon-frame-inner, 17px 17px 17px 17px);
+}
+body .inv-groove { border-color: transparent; box-shadow: none; }
+body .rail-fill, body .docked-header-rail-fill {
+	background-color: transparent;
+	border-color: transparent;
+	border-radius: 0;
+	box-shadow: none;
+	decorator: ninepatch(kryon-header, kryon-header-inner, 7px 9px 7px 9px);
+}
+body .rail-accent, body .docked-rail-accent { display: none; }
+
+/* Equipment slots: the item slot plate; a slot without art stays bare. */
+body .equip-slot {
+	background-color: transparent;
+	border-color: transparent;
+	decorator: ninepatch(kryon-slot, kryon-slot-inner, 7px 7px 7px 7px);
+}
+body .equip-slot.no-art { decorator: none; }
