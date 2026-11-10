@@ -715,24 +715,202 @@
 	border-bottom-color: rgba(224, 177, 88, 80);
 }
 /* --------------------------------------------------------------------------
-   Kryon settings deck: the analysis command panel as a full rounded deck.
+   Kryon settings dialog: a compact, centred plate over the scrim instead of
+   modern's screen-filling shell. The frame is the loader's double bronze ring;
+   categories, rows and the close action are dark cards inside it.
+
+   The plate is painted with background-color + decorator (RmlUi's `background`
+   shorthand takes no gradients), and it stays clear of the screen edges with
+   its shadow: a blurred shadow that reaches past the viewport is drawn
+   misplaced.
    -------------------------------------------------------------------------- */
 .opt-shell {
-	box-sizing: border-box;
-	padding: 18dp;
-	border: 1dp #8a5f2e;
-	border-radius: 14dp;
-	background:
-		radial-gradient(circle at 50% -15%, rgba(202, 132, 38, 38), transparent 48%),
-		linear-gradient(to bottom, rgba(24, 20, 18, 245), rgba(5, 5, 6, 248));
+	left: 50%;
+	right: auto;
+	top: 50%;
+	bottom: auto;
+	box-sizing: content-box;
+	width: 676dp;
+	height: 460dp;
+	margin-left: -361dp;
+	margin-top: -249dp;
+	padding: 18dp 22dp;
+	border: 1dp token(accent-gold);
+	border-radius: token(radius-sm)dp;
+	background-color: rgba(11, 8, 6, 246);
+	decorator:
+		radial-gradient(ellipse at top, rgba(202, 132, 38, 30), transparent 60%),
+		linear-gradient(to bottom, rgba(24, 20, 18, 246), rgba(5, 5, 6, 248));
 	box-shadow:
-		0 26dp 70dp rgba(0, 0, 0, 200);
-	border-color: rgba(163, 111, 61, 217);
+		0 0 0 3dp #050403,
+		0 0 0 4dp #8a5f2e,
+		inset 0 0 0 5dp #0b0806,
+		inset 0 0 0 6dp rgba(160, 110, 60, 70);
 }
+/* Room for a soft drop shadow only where the plate sits well inside the screen. */
+@media (min-height: 561dp) and (min-width: 781dp) {
+	.opt-shell {
+		box-shadow:
+			0 0 0 3dp #050403,
+			0 0 0 4dp #8a5f2e,
+			inset 0 0 0 5dp #0b0806,
+			inset 0 0 0 6dp rgba(160, 110, 60, 70),
+			0 6dp 14dp rgba(0, 0, 0, 170);
+	}
+}
+
+/* Header: the serif title on a bronze rule, the close button as a gold plate. */
 .opt-header {
+	height: 44dp;
 	border-bottom-color: rgba(224, 177, 88, 70);
 }
 .opt-title {
+	padding-left: 4dp;
+	border-left-width: 0;
+	font-family: "token(font-title)";
+	font-size: 18dp;
+	letter-spacing: 4dp;
 	color: token(text-warm);
-	letter-spacing: 5dp;
+}
+.opt-close {
+	width: 30dp;
+	height: 30dp;
+	border: 1dp token(accent-gold-hover);
+	border-radius: 5dp;
+	background-color: token(accent-gold);
+	decorator: linear-gradient(to bottom, #e8bd66, #b8842f);
+}
+.opt-close:hover {
+	background-color: token(accent-gold-hover);
+	decorator: linear-gradient(to bottom, #ffe4a3, #d9a548);
+}
+.opt-close-bar,
+.opt-close:hover .opt-close-bar {
+	left: 8dp;
+	top: 14dp;
+	width: 14dp;
+	background-color: #1a0d03;
+}
+
+.opt-body {
+	margin-top: 14dp;
+}
+
+/* Category rail: one card per category, the active one ringed in gold. */
+.opt-nav {
+	width: 150dp;
+	margin-right: 14dp;
+}
+.opt-nav-item {
+	height: 34dp;
+	line-height: 34dp;
+	margin-bottom: 6dp;
+	padding-left: 12dp;
+	border: 1dp rgba(138, 95, 46, 110);
+	border-radius: 5dp;
+	font-size: 12dp;
+	letter-spacing: 1dp;
+	background-color: rgba(0, 0, 0, 100);
+}
+.opt-nav-item:hover {
+	border-color: rgba(224, 177, 88, 170);
+	background-color: rgba(255, 226, 156, 14);
+}
+.opt-nav-item.active-tab {
+	border-color: token(accent-gold);
+	background-color: rgba(196, 154, 60, 30);
+}
+
+/* The rows' well: a sunken dark plate, no glass. */
+.opt-pane {
+	background-color: rgba(5, 4, 3, 150);
+	backdrop-filter: none;
+	decorator: none;
+	border: 1dp rgba(138, 95, 46, 120);
+	border-radius: 6dp;
+	box-shadow: inset 0 2dp 8dp rgba(0, 0, 0, 170);
+}
+.opt-scroll {
+	padding: 12dp 14dp;
+}
+/* The rail already names the open category. */
+.opt-page-title {
+	display: none;
+}
+
+/* A setting is a card of its own. */
+.opt-row {
+	height: 36dp;
+	margin-bottom: 5dp;
+	border: 1dp rgba(138, 95, 46, 80);
+	border-radius: 5dp;
+	background-color: rgba(0, 0, 0, 110);
+}
+.opt-row:hover {
+	border-color: rgba(224, 177, 88, 150);
+	background-color: rgba(255, 226, 156, 12);
+}
+.opt-tuning-group {
+	margin-bottom: 5dp;
+	border: 1dp rgba(138, 95, 46, 60);
+	border-radius: 5dp;
+	background-color: rgba(0, 0, 0, 70);
+}
+
+/* Footer: the close action as a bronze command button. */
+.opt-footer {
+	height: 34dp;
+	margin-top: 12dp;
+	border-top-width: 0;
+}
+.opt-footer-action {
+	height: 22dp;
+	padding: 5dp 14dp;
+	border: 1dp token(border-frame);
+	border-radius: 6dp;
+	background-color: rgba(0, 0, 0, 110);
+}
+.opt-footer-action:hover {
+	border-color: token(accent-gold);
+	background-color: rgba(255, 226, 156, 16);
+}
+.opt-footer-label {
+	font-family: "token(font-title)";
+	font-size: 12dp;
+	color: token(text-warm);
+}
+
+/* A short screen (a small window or a large UI scale): the plate takes the screen's height, less
+   a margin, and its header, rail, rows and footer tighten. */
+@media (max-height: 560dp) {
+	.opt-shell {
+		top: 4%;
+		bottom: 4%;
+		height: auto;
+		margin-top: 0;
+		padding: 12dp 18dp;
+	}
+	.opt-header { height: 36dp; }
+	.opt-title { font-size: 16dp; letter-spacing: 3dp; }
+	.opt-close { width: 26dp; height: 26dp; }
+	.opt-close-bar,
+	.opt-close:hover .opt-close-bar { left: 6dp; top: 12dp; }
+	.opt-body { margin-top: 10dp; }
+	.opt-nav-item { height: 30dp; line-height: 30dp; margin-bottom: 4dp; }
+	.opt-scroll { padding: 8dp 10dp; }
+	.opt-row { height: 32dp; margin-bottom: 4dp; }
+	.opt-footer { margin-top: 8dp; }
+}
+/* A narrow screen: the plate takes the screen's width, less a margin, and the rail narrows. */
+@media (max-width: 780dp) {
+	.opt-shell {
+		left: 3%;
+		right: 3%;
+		width: auto;
+		margin-left: 0;
+		padding-left: 12dp;
+		padding-right: 12dp;
+	}
+	.opt-nav { width: 118dp; margin-right: 10dp; }
+	.opt-nav-item { padding-left: 8dp; letter-spacing: 0.5dp; }
 }

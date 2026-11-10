@@ -341,3 +341,135 @@
 	#panel.system-menu .gmd-btn { height: 36dp; line-height: 36dp; font-size: 13dp; }
 	.gmd-sys-footer { height: 36dp; }
 }
+
+/* --------------------------------------------------------------------------
+   Kryon system menu: a compact, centred plate over the scrim instead of
+   modern's screen-filling list, matching this theme's settings dialog
+   (option_window.rcss). #panel still covers the screen, so the scrim takes
+   every click and the groove still blocks dragging; the shell's content well
+   becomes the plate and sizes itself to the buttons it holds.
+   -------------------------------------------------------------------------- */
+#panel.system-menu {
+	background-color: rgba(3, 6, 9, 150);
+	decorator: radial-gradient(ellipse, rgba(202, 132, 38, 18) 0%, rgba(2, 3, 5, 150) 100%);
+}
+#panel.system-menu .window-shell-content {
+	left: 50%;
+	right: auto;
+	top: 50%;
+	bottom: auto;
+	width: 280dp;
+	height: auto;
+	transform: translate(-50%, -50%);
+	padding: 14dp 20dp 16dp;
+	border-width: 1dp;
+	border-color: token(accent-gold);
+	border-radius: token(radius-sm)dp;
+	background-color: rgba(11, 8, 6, 246);
+	decorator:
+		radial-gradient(ellipse at top, rgba(202, 132, 38, 30), transparent 60%),
+		linear-gradient(to bottom, rgba(24, 20, 18, 246), rgba(5, 5, 6, 248));
+	box-shadow:
+		0 0 0 3dp #050403,
+		0 0 0 4dp #8a5f2e,
+		inset 0 0 0 5dp #0b0806,
+		inset 0 0 0 6dp rgba(160, 110, 60, 70);
+}
+
+.gmd-sys-header {
+	height: 42dp;
+	border-bottom-color: rgba(224, 177, 88, 70);
+}
+.gmd-sys-title {
+	padding-left: 4dp;
+	border-left-width: 0;
+	font-family: "token(font-title)";
+	font-size: 17dp;
+	letter-spacing: 3dp;
+	color: token(text-warm);
+}
+.gmd-sys-close {
+	width: 28dp;
+	height: 28dp;
+	border: 1dp token(accent-gold-hover);
+	border-radius: 5dp;
+	background-color: token(accent-gold);
+	decorator: linear-gradient(to bottom, #e8bd66, #b8842f);
+}
+.gmd-sys-close:hover {
+	background-color: token(accent-gold-hover);
+	decorator: linear-gradient(to bottom, #ffe4a3, #d9a548);
+}
+.gmd-sys-close-bar,
+.gmd-sys-close:hover .gmd-sys-close-bar {
+	left: 7dp;
+	top: 13dp;
+	width: 14dp;
+	background-color: #1a0d03;
+}
+
+/* The list takes its buttons' height (the plate has none of its own to share out). */
+#panel.system-menu .gmd-button-row {
+	flex: 0 0 auto;
+	justify-content: flex-start;
+	align-items: stretch;
+	margin-top: 14dp;
+}
+#panel.system-menu .gmd-button-cell {
+	width: auto;
+	margin: 0 0 6dp 0;
+}
+#panel.system-menu .gmd-btn {
+	height: 38dp;
+	line-height: 36dp;
+	padding-left: 0;
+	text-align: center;
+	font-size: 13dp;
+	color: token(text-warm);
+	background-color: rgba(0, 0, 0, 100);
+	border-width: 1dp;
+	border-color: rgba(138, 95, 46, 110);
+	border-radius: 5dp;
+}
+#panel.system-menu .gmd-btn:hover {
+	color: token(accent-gold-hover);
+	border-color: token(accent-gold);
+	background-color: rgba(196, 154, 60, 30);
+	decorator: none;
+}
+#panel.system-menu .gmd-btn:active {
+	background-color: rgba(196, 154, 60, 60);
+}
+
+.gmd-sys-footer {
+	height: 34dp;
+	margin-top: 6dp;
+	border-top-width: 0;
+}
+.gmd-sys-footer-action {
+	height: 22dp;
+	padding: 5dp 14dp;
+	border: 1dp token(border-frame);
+	border-radius: 6dp;
+	background-color: rgba(0, 0, 0, 110);
+}
+.gmd-sys-footer-action:hover {
+	border-color: token(accent-gold);
+	background-color: rgba(255, 226, 156, 16);
+}
+.gmd-sys-footer-label {
+	font-family: "token(font-title)";
+	font-size: 12dp;
+	color: token(text-warm);
+}
+
+/* A short screen (a small window or a large UI scale) tightens the plate. */
+@media (max-height: 560dp) {
+	#panel.system-menu .window-shell-content { left: 50%; right: auto; top: 50%; bottom: auto; padding: 10dp 16dp 12dp; }
+	.gmd-sys-header { height: 36dp; }
+	.gmd-sys-title { font-size: 15dp; letter-spacing: 3dp; }
+	#panel.system-menu .gmd-button-row { margin-top: 10dp; }
+	#panel.system-menu .gmd-button-cell { width: auto; margin-bottom: 5dp; }
+	#panel.system-menu .gmd-btn { height: 34dp; line-height: 32dp; font-size: 12dp; }
+	.gmd-sys-footer { margin-top: 4dp; }
+}
