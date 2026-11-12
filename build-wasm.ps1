@@ -24,30 +24,35 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "=== Compilation Successful ===" -ForegroundColor Green
 
-$mainData = "out\build\wasm-web\src\Main.data"
-$shaderStage = "out\build\wasm-web\shaders"
-$vfsNeedsRebuild = $RebuildAssets -or -not (Test-Path $mainData)
-if (-not $vfsNeedsRebuild -and (Test-Path $shaderStage)) {
-    # The VFS is preloaded once; deploy new or changed shader blobs without
-    # forcing a full 700 MB repack on every build that did not touch them.
-    $mainDataTime = (Get-Item $mainData).LastWriteTimeUtc
-    $vfsNeedsRebuild = [bool](Get-ChildItem $shaderStage -File -Recurse |
-        Where-Object { $_.LastWriteTimeUtc -gt $mainDataTime } |
-        Select-Object -First 1)
-}
-
-if ($vfsNeedsRebuild) {
-    Write-Host "=== Packaging VFS Assets (Data, fonts, shaders, config.ini) ===" -ForegroundColor Cyan
-    python C:\Users\Poisson\emsdk\upstream\emscripten\tools\file_packager.py out\build\wasm-web\src\Main.data `
-      --preload "out\build\wasm-web\shaders@shaders" `
-      --preload "src\bin\fonts@fonts" `
-      --preload "out\build\wasm-web\src\config.ini@config.ini" `
-      --preload "src\bin\Data@Data" `
-      --js-output=out\build\wasm-web\src\Main.data.js
+# Main.data only carries the small, build-generated files (shaders and
+# config.ini, well under 1 MB), so it is cheap to repack on every build.
+# Data/ and fonts/ ship as content-addressed buckets built straight into the
+# stack (see openmu-browser-stack/scripts/build-data-buckets.js): unchanged
+# buckets are left untouched, so a rebuild only replaces what changed and
+# browsers keep the rest cached. -RebuildAssets is kept for compatibility;
+# both steps now always run.
+Write-Host "=== Packaging Main.data (shaders, config.ini) ===" -ForegroundColor Cyan
+python C:\Users\Poisson\emsdk\upstream\emscripten\tools\file_packager.py out\build\wasm-web\src\Main.data `
+  --preload "out\build\wasm-web\shaders@shaders" `
+  --preload "out\build\wasm-web\src\config.ini@config.ini" `
+  --js-output=out\build\wasm-web\src\Main.data.js
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "file_packager failed."
+    exit $LASTEXITCODE
 }
 
 Write-Host "=== Deploying to openmu-browser-stack/public ===" -ForegroundColor Cyan
 if (Test-Path $stackPublic) {
+    Write-Host "=== Packaging data buckets (Data, fonts) ===" -ForegroundColor Cyan
+    $bucketScript = Join-Path (Split-Path $stackPublic -Parent) "scripts\build-data-buckets.js"
+    node $bucketScript --out "$stackPublic\assets" `
+      --add "src\bin\Data@/Data" `
+      --add "src\bin\fonts@/fonts"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Data bucket build failed."
+        exit $LASTEXITCODE
+    }
+
     Copy-Item "out\build\wasm-web\src\Main.wasm" "$stackPublic\Main.wasm" -Force
     Copy-Item "out\build\wasm-web\src\Main.js" "$stackPublic\Main.js" -Force
     Copy-Item "out\build\wasm-web\src\Main.data.js" "$stackPublic\Main.data.js" -Force
