@@ -7,6 +7,11 @@ namespace Render::Sprites
 {
 TextureDecodePool::TextureDecodePool(unsigned threadCount)
 {
+#ifdef __EMSCRIPTEN__
+    // The browser build has no threads: Post runs each decode on the game thread.
+    (void)threadCount;
+    return;
+#endif
     threadCount = std::max(1u, threadCount);
     m_threads.reserve(threadCount);
     for (unsigned i = 0; i < threadCount; ++i)
@@ -31,6 +36,10 @@ TextureDecodePool::~TextureDecodePool()
 
 void TextureDecodePool::Post(std::function<void()> job)
 {
+#ifdef __EMSCRIPTEN__
+    job();
+    return;
+#endif
     {
         const std::lock_guard lock(m_mutex);
         m_jobs.push_back(std::move(job));

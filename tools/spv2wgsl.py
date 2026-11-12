@@ -140,6 +140,10 @@ def main():
             raise SystemExit(r.returncode)
         wgsl = open(out, encoding="utf-8").read()
     wgsl = strip_vertex_input_interp(post_edit(wgsl))
+    if "@fragment" in wgsl and "diagnostic(off, derivative_uniformity)" not in wgsl:
+        # HLSL samples with implicit derivatives inside branches (world_lit's terrain sun light);
+        # Tint rejects that unless the uniformity diagnostic is off, which keeps HLSL's behaviour.
+        wgsl = "diagnostic(off, derivative_uniformity);\n\n" + wgsl
     open(dst, "w", encoding="utf-8", newline="\n").write(wgsl)
     # Round-trip: naga must accept the edited WGSL.
     r = subprocess.run(["naga", dst], capture_output=True, text=True)

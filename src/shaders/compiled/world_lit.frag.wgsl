@@ -1,3 +1,5 @@
+diagnostic(off, derivative_uniformity);
+
 struct FSInput {
     pos: vec4<f32>,
     uv: vec2<f32>,

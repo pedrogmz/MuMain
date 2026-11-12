@@ -578,9 +578,10 @@ if (EMSCRIPTEN)
     "-sINITIAL_MEMORY=1073741824"
     "-sMAXIMUM_MEMORY=2147483648"
     "-sNO_DISABLE_EXCEPTION_CATCHING"
+    "-sEXPORT_EXCEPTION_HANDLING_HELPERS"
     "-lwebsocket.js"
     "-sFORCE_FILESYSTEM=1"
-    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,stringToUTF8"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,stringToUTF8,getExceptionMessage"
   )
 endif()
 
