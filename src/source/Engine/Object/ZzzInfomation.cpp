@@ -477,9 +477,10 @@ void SetItemAttributes(ITEM* ip)
     ip->WeaponSpeed = p->WeaponSpeed;
     ip->WalkSpeed = p->WalkSpeed;
 
-    // What the + level, excellent options, ancient set and option level add, from the item stat file.
+    // What the + level, excellent options, ancient set and additional option add, from the item stat file.
+    const auto optionLevel = static_cast<BYTE>(GameLogic::Items::GetAdditionalOptionLevel(*ip));
     const GameLogic::Items::ItemStatValues stats = GameLogic::Items::ComputeItemStats(
-        *p, {ip->Type, ip->Level, ip->ExcellentFlags, ip->AncientDiscriminator, ip->OptionLevel});
+        *p, {ip->Type, ip->Level, ip->ExcellentFlags, ip->AncientDiscriminator, optionLevel});
     ip->DamageMin = static_cast<WORD>(stats.damageMin);
     ip->DamageMax = static_cast<WORD>(stats.damageMax);
     ip->MagicPower = static_cast<WORD>(stats.magicPower);
@@ -506,9 +507,12 @@ void SetItemAttributes(ITEM* ip)
     }
 
     GameLogic::Items::AddLinkedOptions(*ip, Data::Items::ItemOptionType::Luck);
+    GameLogic::Items::AddLinkedOptions(*ip, Data::Items::ItemOptionType::Option);
 
+    // The Horn of Dinorant's and the wings' additional options are still code (9b5, 9b1); an item whose additional
+    // option is in data has it from its definition.
     int Option3 = ip->OptionLevel;
-    if (Option3)
+    if (Option3 && !GameLogic::Items::LinksOptionType(ip->Type, Data::Items::ItemOptionType::Option))
     {
         if (ip->Type == ITEM_HORN_OF_DINORANT)
         {
@@ -527,41 +531,6 @@ void SetItemAttributes(ITEM* ip)
         }
         else
         {
-            if (ip->Type >= ITEM_SWORD && ip->Type < ITEM_BOW + MAX_ITEM_INDEX)
-            {
-                if (!GameLogic::Items::IsAmmunition(ip))
-                {
-                    GameLogic::Items::AddOptionSlot(*ip, AT_IMPROVE_DAMAGE, Option3 * 4);
-                }
-            }
-            if (ip->Type >= ITEM_STAFF && ip->Type < ITEM_STAFF + MAX_ITEM_INDEX)
-            {
-                const WORD option = GameLogic::Items::IsSummonerBook(ip) ? AT_IMPROVE_CURSE : AT_IMPROVE_MAGIC;
-                GameLogic::Items::AddOptionSlot(*ip, option, Option3 * 4);
-            }
-            if (ip->Type >= ITEM_SHIELD && ip->Type < ITEM_SHIELD + MAX_ITEM_INDEX)
-            {
-                GameLogic::Items::AddOptionSlot(*ip, AT_IMPROVE_BLOCKING, Option3 * 5);
-            }
-            if (ip->Type >= ITEM_HELM && ip->Type < ITEM_BOOTS + MAX_ITEM_INDEX)
-            {
-                GameLogic::Items::AddOptionSlot(*ip, AT_IMPROVE_DEFENSE, Option3 * 4);
-            }
-            if (ip->Type >= ITEM_RING_OF_ICE && ip->Type < ITEM_HELPER + MAX_ITEM_INDEX && ip->Type != ITEM_CAPE_OF_LORD)
-            {
-                if (ip->Type == ITEM_RING_OF_MAGIC)
-                {
-                    GameLogic::Items::AddOptionSlot(*ip, AT_IMPROVE_MAX_MANA, Option3);
-                }
-                else if (ip->Type == ITEM_PENDANT_OF_ABILITY)
-                {
-                    GameLogic::Items::AddOptionSlot(*ip, AT_IMPROVE_MAX_AG, Option3);
-                }
-                else
-                {
-                    GameLogic::Items::AddOptionSlot(*ip, AT_LIFE_REGENERATION, Option3);
-                }
-            }
             if (ip->Type == ITEM_WING)
             {
                 GameLogic::Items::AddOptionSlot(*ip, AT_LIFE_REGENERATION, Option3);
@@ -1574,47 +1543,50 @@ bool IsRequireEquipItem(ITEM* pItem)
     return bEquipable;
 }
 
+bool AreItemOptionsActive(ITEM* Item)
+{
+    return Item->Type != -1 && Item->Durability != 0 && IsRequireEquipItem(Item);
+}
+
 void PlusSpecial(WORD* Value, int Special, ITEM* Item)
 {
-    if (Item->Type == -1) {
+    if (!AreItemOptionsActive(Item))
+    {
         return;
     }
 
-    if (IsRequireEquipItem(Item))
+    for (int i = 0; i < Item->SpecialNum; i++)
     {
-        for (int i = 0; i < Item->SpecialNum; i++)
-        {
-            if (Item->Special[i] == Special && Item->Durability != 0)
-                *Value += Item->SpecialValue[i];
-        }
+        if (Item->Special[i] == Special)
+            *Value += Item->SpecialValue[i];
     }
 }
 
 void PlusSpecialPercent(WORD* Value, int Special, ITEM* Item, WORD Percent)
 {
-    if (Item->Type == -1) return;
-
-    if (IsRequireEquipItem(Item))
+    if (!AreItemOptionsActive(Item))
     {
-        for (int i = 0; i < Item->SpecialNum; i++)
-        {
-            if (Item->Special[i] == Special && Item->Durability != 0)
-                *Value += *Value * Percent / 100;
-        }
+        return;
+    }
+
+    for (int i = 0; i < Item->SpecialNum; i++)
+    {
+        if (Item->Special[i] == Special)
+            *Value += *Value * Percent / 100;
     }
 }
 
 void PlusSpecialPercent2(WORD* Value, int Special, ITEM* Item)
 {
-    if (Item->Type == -1) return;
-
-    if (IsRequireEquipItem(Item))
+    if (!AreItemOptionsActive(Item))
     {
-        for (int i = 0; i < Item->SpecialNum; i++)
-        {
-            if (Item->Special[i] == Special && Item->Durability != 0)
-                *Value += (unsigned short)(*Value * (Item->SpecialValue[i] / 100.f));
-        }
+        return;
+    }
+
+    for (int i = 0; i < Item->SpecialNum; i++)
+    {
+        if (Item->Special[i] == Special)
+            *Value += (unsigned short)(*Value * (Item->SpecialValue[i] / 100.f));
     }
 }
 
@@ -2047,19 +2019,6 @@ void CHARACTER_MACHINE::CalculateDamage()
     }
 }
 
-void CHARACTER_MACHINE::CalculateCriticalDamage()
-{
-    Character.CriticalDamage = 0;
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_WEAPON_RIGHT]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_WEAPON_LEFT]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_HELM]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_ARMOR]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_PANTS]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_GLOVES]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_BOOTS]);
-    PlusSpecial(&Character.CriticalDamage, AT_LUCK, &Equipment[EQUIPMENT_WING]);
-}
-
 void CHARACTER_MACHINE::CalculateMagicDamage()
 {
     WORD Energy;
@@ -2101,7 +2060,7 @@ void CHARACTER_MACHINE::CalculateMagicDamage()
         percent = CalcDurabilityPercent(Right->Durability, p->Durability, Right->Level, Right->ExcellentFlags, Right->AncientDiscriminator);
         DamageMin = 0; DamageMax = 0;
 
-        if (GameLogic::Items::IsMagicSwordType(Right->Type))
+        if (GameLogic::Items::DamageOptionRaisesWizardry(*Right))
         {
             PlusSpecial(&DamageMin, AT_IMPROVE_DAMAGE, Right);
             PlusSpecial(&DamageMax, AT_IMPROVE_DAMAGE, Right);
@@ -2132,7 +2091,7 @@ void CHARACTER_MACHINE::CalculateMagicDamage()
 
             if (GameLogic::Items::IsWeaponOrAmmunition(Left))
             {
-                if (GameLogic::Items::IsMagicSwordType(Left->Type))
+                if (GameLogic::Items::DamageOptionRaisesWizardry(*Left))
                 {
                     PlusSpecial(&DamageMin, AT_IMPROVE_DAMAGE, Left);
                     PlusSpecial(&DamageMax, AT_IMPROVE_DAMAGE, Left);
@@ -2165,7 +2124,7 @@ void CHARACTER_MACHINE::CalculateMagicDamage()
             percent = CalcDurabilityPercent(Left->Durability, p->Durability, Left->Level, Left->ExcellentFlags, Left->AncientDiscriminator);
             DamageMin = 0; DamageMax = 0;
 
-            if (GameLogic::Items::IsMagicSwordType(Right->Type))
+            if (GameLogic::Items::DamageOptionRaisesWizardry(*Right))
             {
                 PlusSpecial(&DamageMin, AT_IMPROVE_DAMAGE, Right);
                 PlusSpecial(&DamageMax, AT_IMPROVE_DAMAGE, Right);

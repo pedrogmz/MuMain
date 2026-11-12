@@ -13,6 +13,7 @@
 #include <SDL3/SDL_video.h>
 #include "MuInputBlockerCore.h"
 #include "MuEditorCursor.h"
+#include "Data/DataHandler/ItemData/ItemDataHandler.h"
 #include "MuEditorPlatformWindows.h"
 #include "Core/Input/KeyState.h"
 #include "Core/Input/SyntheticInput.h"
@@ -38,6 +39,8 @@
 #include "../MuEditor/UI/ItemTranslations/MuItemTranslationsUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterBrowserUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterAttacksUI.h"
+#include "../MuEditor/UI/MonsterTools/MuMonsterSetupUI.h"
+#include "../MuEditor/UI/MonsterTools/MuMonsterEquipmentUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterSoundsUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterModelUI.h"
 #include "../MuEditor/UI/MonsterTools/MuMonsterPreviewUI.h"
@@ -537,6 +540,9 @@ void CMuEditorCore::Update()
     // Once per frame: the game's mouse-button reads ask it many times.
     m_bMouseInEditorWindow = FindMouseInEditorWindow();
 
+    // The texts that name items follow the editor's name edits, undo and revert.
+    g_ItemDataHandler.RefreshItemTextsIfNamesChanged();
+
     // Apply a pending UI scale change between frames (never mid-frame).
     if (m_bScaleDirty)
     {
@@ -661,6 +667,14 @@ void CMuEditorCore::RenderMonsterTools()
     if (m_windows.monsterAttacks)
     {
         g_MuMonsterAttacksUI.Render(&m_windows.monsterAttacks);
+    }
+    if (m_windows.monsterSetup)
+    {
+        g_MuMonsterSetupUI.Render(&m_windows.monsterSetup);
+    }
+    if (m_windows.monsterEquipment)
+    {
+        g_MuMonsterEquipmentUI.Render(&m_windows.monsterEquipment);
     }
     if (m_windows.monsterSounds)
     {

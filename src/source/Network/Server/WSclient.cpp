@@ -51,6 +51,9 @@
 #include "GameLogic/Character/CharacterStatCaps.h"
 #include "GameLogic/Events/MatchEvent.h"
 #include "GameLogic/Monsters/MonsterAttackPlay.h"
+#include "GameLogic/Monsters/MonsterFacing.h"
+#include "GameLogic/Monsters/MonsterSetupApply.h"
+#include "World/GameMaps/MonsterSpawnWorld.h"
 #include "Engine/AI/GOBoid.h"
 #include "GameLogic/Quests/CSQuest.h"
 #include "GameLogic/Items/PersonalShopTitleImp.h"
@@ -119,8 +122,14 @@ using namespace mu::ui::window;
 #include "MUHelper/MuHelper.h"
 #include "Network/Server/ServerListManager.h"
 #include "Network/Server/ServerMessageTexts.h"
+#include "Network/Server/GuildRelationshipRequest.h"
+#include "Network/Server/GuildRelationshipCodes.h"
+#include "Network/Server/GuildRelationshipResult.h"
+#include "Guild/GuildRelationshipResultText.h"
+#include "Network/Server/RemoveAllianceGuildResult.h"
 #include "GameLogic/Items/ItemCategories.h"
 #include "Data/GameData/ItemData/ItemModelSlots.h"
+#include "GameLogic/Skills/SkillHotkeyConfiguration.h"
 
 namespace StatCaps = GameLogic::Character;
 
@@ -2278,25 +2287,17 @@ void ReceiveMoveCharacter(std::span<const BYTE> ReceiveBuffer)
         return;
     }
 
-    if (c->Appear == 0)
+    if (c->Appear != 0)
     {
-        int iDefaultWall = TW_CHARACTER;
+        return;
+    }
 
-        if (gMapManager.WorldActive >= WD_65DOPPLEGANGER1 && gMapManager.WorldActive <= WD_68DOPPLEGANGER4 &&
-            Key != HeroKey)
-        {
-            iDefaultWall = TW_NOMOVE;
-        }
-
-        if (PathFinding2(c->PositionX, c->PositionY, c->TargetX, c->TargetY, &c->Path, 0.0f, iDefaultWall))
-        {
-            c->Movement = true;
-        }
-        else
-        {
-            c->Movement = false;
-            SetPlayerStop(c);
-        }
+    // Without a path the running glide carries on to the walk's end, as before, so the character never freezes where
+    // it is drawn. MoveMonsterClient tries the walk again every frame.
+    if (!StartObservedWalk(c))
+    {
+        c->Movement = false;
+        SetPlayerStop(c);
     }
 }
 
@@ -2981,13 +2982,13 @@ void ReceiveCreateTransformViewport(std::span<const BYTE> ReceiveBuffer)
 
             auto Type = (EMonsterType)(((WORD)(Data2->TypeH) << 8) + Data2->TypeL);
 
-            CHARACTER* c = CreateMonster(Type, Data2->PositionX, Data2->PositionY, Key);
-            OBJECT* o = &c->Object;
-
-            if (c->MonsterIndex == MONSTER_GIANT)
+            CHARACTER* c = nullptr;
             {
-                o->Scale = 0.8f;
+                // The monster data's state playerTransformed (Q-MN38d).
+                const World::Monsters::PlayerTransformScope transformed;
+                c = CreateMonster(Type, Data2->PositionX, Data2->PositionY, Key);
             }
+            OBJECT* o = &c->Object;
 
             if (Type == MONSTER_JACK_OLANTERN)
             {
@@ -3055,93 +3056,6 @@ void ReceiveCreateTransformViewport(std::span<const BYTE> ReceiveBuffer)
     g_ConsoleDebug->Write(MCD_RECEIVE, L"0x45 [ReceiveCreateTransformViewport(%d)]", Data->Value);
 }
 
-void AppearMonster(CHARACTER* c)
-{
-    OBJECT* o = &c->Object;
-    switch (c->MonsterIndex)
-    {
-    case MONSTER_GOLDEN_DRAGON:
-        SetAction(o, MONSTER01_STOP2);
-        o->PriorAction = MONSTER01_STOP2;
-        c->Object.Alpha = 1.f;
-        PlayBuffer(SOUND_MONSTER_BULLATTACK1);
-        break;
-    case MONSTER_ASSASSIN:
-        SetAction(o, MONSTER01_STOP2);
-        o->PriorAction = MONSTER01_STOP2;
-        c->Object.Alpha = 1.f;
-        PlayBuffer(SOUND_ASSASSIN);
-        break;
-    case MONSTER_GOLDEN_TITAN:
-    case MONSTER_GOLDEN_SOLDIER:
-        c->Appear = 60;
-        SetAction(o, MONSTER01_STOP2);
-        o->PriorAction = MONSTER01_STOP2;
-        c->Object.Alpha = 1.f;
-        // PlayBuffer(SOUND_ASSASSIN);
-        break;
-    case MONSTER_CHIEF_SKELETON_ARCHER_1:
-    case MONSTER_CHIEF_SKELETON_ARCHER_2:
-    case MONSTER_CHIEF_SKELETON_ARCHER_3:
-    case MONSTER_CHIEF_SKELETON_ARCHER_4:
-    case MONSTER_CHIEF_SKELETON_ARCHER_5:
-    case MONSTER_CHIEF_SKELETON_ARCHER_6:
-        PlayBuffer(SOUND_MONSTER_ORCCAPATTACK1);
-        break;
-    case MONSTER_DARK_ELF:
-    case MONSTER_DARKELF:
-    case MONSTER_SORAM:
-    case MONSTER_BALRAM:
-    case MONSTER_DEATH_SPIRIT:
-    {
-        if (g_Direction.m_CMVP.m_iCryWolfState == CRYWOLF_STATE_READY)
-            c->Object.Alpha = 1.0f;
-        else
-        {
-            c->Object.Alpha = 0.f;
-
-            vec3_t vPos;
-            Vector(c->Object.Position[0] + 20.0f, c->Object.Position[1] + 20.0f, c->Object.Position[2], vPos);
-
-            CreateJoint(BITMAP_JOINT_THUNDER + 1, vPos, vPos, c->Object.Angle, 7, nullptr, 60.f + Random::Rand() % 10);
-            CreateJoint(BITMAP_JOINT_THUNDER + 1, vPos, vPos, c->Object.Angle, 7, nullptr, 50.f + Random::Rand() % 10);
-            CreateJoint(BITMAP_JOINT_THUNDER + 1, vPos, vPos, c->Object.Angle, 7, nullptr, 50.f + Random::Rand() % 10);
-            CreateJoint(BITMAP_JOINT_THUNDER + 1, vPos, vPos, c->Object.Angle, 7, nullptr, 60.f + Random::Rand() % 10);
-
-            CreateParticle(BITMAP_SMOKE + 4, c->Object.Position, c->Object.Angle, c->Object.Light, 1, 5.0f);
-            CreateParticle(BITMAP_SMOKE + 4, c->Object.Position, c->Object.Angle, c->Object.Light, 1, 5.0f);
-            CreateParticle(BITMAP_SMOKE + 4, c->Object.Position, c->Object.Angle, c->Object.Light, 1, 5.0f);
-
-            Vector(c->Object.Position[0], c->Object.Position[1], c->Object.Position[2] + 120.0f, vPos);
-            CreateJoint(BITMAP_JOINT_THUNDER, c->Object.Position, vPos, c->Object.Angle, 17);
-            CreateJoint(BITMAP_JOINT_THUNDER, c->Object.Position, vPos, c->Object.Angle, 17);
-            CreateJoint(BITMAP_JOINT_THUNDER, c->Object.Position, vPos, c->Object.Angle, 17);
-            CreateJoint(BITMAP_JOINT_THUNDER, c->Object.Position, vPos, c->Object.Angle, 17);
-        }
-    }
-    break;
-    case MONSTER_MAYA_HAND_LEFT:
-    case MONSTER_MAYA_HAND_RIGHT:
-    {
-        SetAction(o, MONSTER01_APEAR);
-        c->Object.Alpha = 0.f;
-    }
-    break;
-    default:
-        if (o->Type == MODEL_PLAYER)
-        {
-            SetAction(o, PLAYER_COME_UP);
-            o->PriorAction = PLAYER_COME_UP;
-            c->Object.Alpha = 1.f;
-        }
-        else
-        {
-            c->Object.Alpha = 0.f;
-        }
-        break;
-    }
-}
-
 void ReceiveCreateMonsterViewport(const BYTE* ReceiveBuffer)
 {
     auto Data = (LPPWHEADER_DEFAULT_WORD)ReceiveBuffer;
@@ -3185,77 +3099,25 @@ void ReceiveCreateMonsterViewport(const BYTE* ReceiveBuffer)
                                   static_cast<int>(Data2->s_BuffEffectState[j]));
         }
 
-        float fAngle = 45.0f;
-        if (o->Type == MODEL_BALLISTA)
-        {
-            if (c->PositionY == 90)
-                fAngle = 0.0f;
-            if (c->PositionX == 62)
-                fAngle = -135.0f;
-            if (c->PositionX == 183)
-                fAngle = 90.0f;
-        }
-        else if (o->Type == MODEL_KANTURU2ND_ENTER_NPC)
-        {
-            o->m_fEdgeScale = 1.0f;
-            fAngle = 90.f;
-        }
-
-        c->Object.Angle[2] = ((float)(Data2->Path >> 4) - 1.f) * fAngle;
-
-        if (o->Type >= MODEL_LITTLESANTA + 1 && o->Type <= MODEL_LITTLESANTA + 4)
-        {
-            c->Object.Angle[2] = 90.f;
-        }
-        else if (o->Type >= MODEL_LITTLESANTA + 6 && o->Type <= MODEL_LITTLESANTA + 7)
-        {
-            c->Object.Angle[2] = 90.f;
-        }
-        else if (o->Type == MODEL_XMAS2008_SANTA_NPC)
-        {
-            c->Object.Angle[2] = 20.f;
-        }
-        else if (o->Type == MODEL_UNITEDMARKETPLACE_JULIA)
-        {
-            // c->Object.Angle[2] = 44.0f;
-            c->Object.Angle[2] = 49.0f;
-            // c->Object.Angle[2] = 90.0f;
-        }
-
-        c->PositionX = Data2->PositionX;
-        c->PositionY = Data2->PositionY;
-        c->TargetX = Data2->PositionX;
-        c->TargetY = Data2->PositionY;
+        // CreateMonster keeps the server's tile: the facing by tile is the
+        // server's.
+        c->Object.Angle[2] =
+            GameLogic::Monsters::Facing::AngleOnArrival(*c, Data2->Path >> 4, World::Monsters::GetSpawnWorld());
 
         c->m_byFriend = bMyMob;
         o->m_byBuildTime = byBuildTime;
 
-        if (gMapManager.InBattleCastle() && c->MonsterIndex == MONSTER_CASTLE_GATE1)
+        // A castle gate shows what its buff says (Q-MN38c).
+        if (gMapManager.InBattleCastle())
         {
-            if (g_isCharacterBuff((&c->Object), eBuff_CastleGateIsOpen))
-            {
-                SetAction(&c->Object, 1);
-                battleCastle::SetCastleGate_Attribute(Data2->PositionX, Data2->PositionY, 0);
-            }
-            else
-            {
-                SetAction(&c->Object, 0);
-                battleCastle::SetCastleGate_Attribute(Data2->PositionX, Data2->PositionY, 1);
-            }
+            if (const std::optional<battleCastle::GateLooks> gate = battleCastle::GateLooksOf(*c))
+                battleCastle::ShowGateOnArrival(*c, *gate, Data2->PositionX, Data2->PositionY, false);
         }
+        // How it comes in, from its entry (Q-MN38c).
         if (CreateFlag)
-        {
-            AppearMonster(c);
-        }
-        else if (gMapManager.WorldActive == WD_39KANTURU_3RD && o->Type == MODEL_DARK_SKULL_SOLDIER_5 && TeleportFlag)
-        {
-            vec3_t Light;
-            Vector(1.0f, 1.0f, 1.0f, Light);
-            o->AlphaTarget = 1.f;
-            CreateEffect(BITMAP_SPARK + 1, o->Position, o->Angle, Light);
-            CreateEffect(BITMAP_SPARK + 1, o->Position, o->Angle, Light);
-            PlayBuffer(SOUND_KANTURU_3RD_NIGHTMARE_TELE);
-        }
+            GameLogic::Monsters::Setup::Appear(*c, World::Monsters::GetSpawnWorld());
+        else if (TeleportFlag)
+            GameLogic::Monsters::Setup::Teleport(*c, World::Monsters::GetSpawnWorld());
 
         int iDefaultWall = TW_CHARACTER;
 
@@ -3340,15 +3202,11 @@ void ReceiveCreateSummonViewport(const BYTE* ReceiveBuffer)
 
         if (CreateFlag)
         {
-            AppearMonster(c);
+            // How it comes in, from its entry (Q-MN38c): the Kalima gates'
+            // thunder, frame and sound too.
+            GameLogic::Monsters::Setup::Appear(*c, World::Monsters::GetSpawnWorld());
             CreateEffect(MODEL_MAGIC_CIRCLE1, o->Position, o->Angle, o->Light, 0, o);
             CreateParticle(BITMAP_LIGHTNING + 1, o->Position, o->Angle, o->Light, 2, 1.f, o);
-            if (Type >= 152 && Type <= 158)
-            {
-                o->PriorAnimationFrame = 0.f;
-                o->AnimationFrame = 0.f;
-                PlayBuffer(SOUND_CHAOS_FALLING_STONE);
-            }
         }
         else if (PathFinding2(c->PositionX, c->PositionY, Data2->TargetX, Data2->TargetY, &c->Path))
         {
@@ -3795,6 +3653,24 @@ void ReceiveAttackDamageExtended(const BYTE* ReceiveBuffer)
     App::Control::Events::RecordAttackDamage(AttackPlayer, Key, Damage, ShieldDamage, DamageType);
 }
 
+namespace
+{
+constexpr int NoActionTargetKey = 0;
+
+void StartReceivedAttack(CHARACTER* character, int targetIndex)
+{
+    // A monster's attack data may pick the animation from the stored player skill.
+    SetPlayerAttack(character);
+    character->Skill = 0;
+    character->AttackTime = 1;
+    character->LastAttackEffectTime = -1;
+    character->Object.AnimationFrame = 0;
+    const bool targetFound = targetIndex != MAX_CHARACTERS_CLIENT;
+    character->TargetCharacter = targetFound ? static_cast<short>(targetIndex) : -1;
+    character->ReceivedAttackTargetUnknown = !targetFound;
+}
+} // namespace
+
 void ReceiveAction(const BYTE* ReceiveBuffer, int Size)
 {
     auto Data = (LPPRECEIVE_ACTION)ReceiveBuffer;
@@ -3807,7 +3683,8 @@ void ReceiveAction(const BYTE* ReceiveBuffer, int Size)
     int iTargetKey, iTargetIndex;
 
     iTargetKey = ((int)(Data->TargetKeyH) << 8) + Data->TargetKeyL;
-    iTargetIndex = FindCharacterIndex(iTargetKey);
+    // OpenMU sends 0 for an animation without a target; local characters can use key 0 too.
+    iTargetIndex = iTargetKey != NoActionTargetKey ? FindCharacterIndex(iTargetKey) : MAX_CHARACTERS_CLIENT;
 
     if (!c->SafeZone && c->Helper.Type == MODEL_DARK_HORSE_ITEM)
     {
@@ -3830,11 +3707,7 @@ void ReceiveAction(const BYTE* ReceiveBuffer, int Size)
         break;
     case AT_ATTACK1:
     case AT_ATTACK2:
-        SetPlayerAttack(c);
-        c->AttackTime = 1;
-        c->Object.AnimationFrame = 0;
-
-        c->TargetCharacter = HeroIndex;
+        StartReceivedAttack(c, iTargetIndex);
         if (IsMonster(c))
         {
             MUHelper::g_MuHelper.AddTarget(Key, iTargetKey == HeroKey);
@@ -4053,8 +3926,11 @@ void ReceiveSkillStatus(const BYTE* ReceiveBuffer)
 
         if (g_isCharacterBuff(o, bufftype))
         {
-            if ((o->Type >= MODEL_CRYWOLF_ALTAR1 && o->Type <= MODEL_CRYWOLF_ALTAR5) || MODEL_SMITH ||
-                MODEL_NPC_SERBIS || MODEL_MERCHANT_MAN || MODEL_STORAGE || MODEL_NPC_BREEDER)
+            // Shown already (a monster's spawn buff): the server's now too.
+            GameLogic::Monsters::Setup::NoteServerBuff(*o, static_cast<int>(bufftype), true);
+            if ((o->Type >= MODEL_CRYWOLF_ALTAR1 && o->Type <= MODEL_CRYWOLF_ALTAR5) || o->Type == MODEL_SMITH ||
+                o->Type == MODEL_NPC_SERBIS || o->Type == MODEL_MERCHANT_MAN || o->Type == MODEL_STORAGE ||
+                o->Type == MODEL_NPC_BREEDER)
             {
                 if (g_isCharacterBuff(o, eBuff_CrywolfHeroContracted))
                 {
@@ -6429,7 +6305,7 @@ void ReceiveGetItem(std::span<const BYTE> ReceiveBuffer)
             UI::Chat::PostSystem(szMessage, mu::ui::window::TYPE_SYSTEM_MESSAGE);
 
             int Type = pickedItem->Type;
-            if (GameLogic::Items::IsJewelItem(pickedItem) || Type == INDEX_COMPILED_CELE || Type == INDEX_COMPILED_SOUL)
+            if (GameLogic::Items::IsJewelItem(pickedItem))
                 PlayBuffer(SOUND_JEWEL01, &Hero->Object);
             else if (Type == ITEM_GEMSTONE)
                 PlayBuffer(SOUND_JEWEL02, &Hero->Object);
@@ -8156,119 +8032,59 @@ void ReceiveGuildAssign(const BYTE* ReceiveBuffer)
     UI::Chat::PostSystem(szTemp, mu::ui::window::TYPE_SYSTEM_MESSAGE);
 }
 
-void ReceiveGuildRelationShip(const BYTE* ReceiveBuffer)
+void ReceiveGuildRelationShip(std::span<const BYTE> ReceiveBuffer)
 {
-    auto pData = (LPPMSG_GUILD_RELATIONSHIP)ReceiveBuffer;
+    const auto request = Network::Packets::ParseGuildRelationshipRequest(ReceiveBuffer);
+    if (!request)
+    {
+        mu::log::Get("network")->warn("NET: Invalid E5 guild relationship request packet dropped ({} bytes)",
+                                      ReceiveBuffer.size());
+        return;
+    }
 
-    UI::Guild::ShowRelationshipRequest(static_cast<std::uint32_t>(pData->byRelationShipType),
-                                       static_cast<std::uint32_t>(pData->byRequestType), pData->byTargetUserIndexH,
-                                       pData->byTargetUserIndexL);
+    UI::Guild::ShowRelationshipRequest(request->relationshipType, request->requestType, request->requesterKey);
 }
 
-void ReceiveGuildRelationShipResult(const BYTE* ReceiveBuffer)
+void ReceiveGuildRelationShipResult(std::span<const BYTE> ReceiveBuffer)
 {
-    wchar_t szTemp[MAX_GLOBAL_TEXT_STRING] = L"Invalid GuildRelationShipResult";
-    auto pData = (LPPMSG_GUILD_RELATIONSHIP_RESULT)ReceiveBuffer;
-    if (pData->byResult == 0x01)
+    const auto change = Network::Packets::ParseGuildRelationshipResult(ReceiveBuffer);
+    if (!change)
     {
-        if (pData->byRelationShipType == 0x01)
-        {
-            if (pData->byRequestType == 0x01)
-            {
-                wcscpy(szTemp, I18N::Game::GuildAllianceRegistrationIsSuccessful);
-            }
-            else if (pData->byRequestType == 0x02)
-            {
-                wcscpy(szTemp, I18N::Game::GuildAllianceWithdrawalIsSuccessful);
-            }
-            else if (pData->byRequestType == 0x10)
-            {
-                wcscpy(szTemp, I18N::Game::DisbandOfAllianceGuildOrRequest);
-            }
-        }
-        else
-        {
-            if (pData->byRequestType == 0x01)
-                wcscpy(szTemp, I18N::Game::HostileGuildIsConnected);
-            else
-                wcscpy(szTemp, I18N::Game::HostileGuildIsDisconnected);
-        }
+        mu::log::Get("network")->warn("NET: Invalid E6 guild relationship result packet dropped ({} bytes)",
+                                      ReceiveBuffer.size());
+        return;
     }
-    else if (pData->byResult == 0)
-    {
-        wcscpy(szTemp, I18N::Game::Failed);
-    }
-    else
-    {
-        switch (pData->byResult)
-        {
-        case GUILD_ANS_UNIONFAIL_BY_CASTLE:
-            wcscpy(szTemp, I18N::Game::AllianceFunctionWillBeRestrictedDueToTheCastleSiege);
-            break;
-        case GUILD_ANS_NOTEXIST_PERMISSION:
-            wcscpy(szTemp, I18N::Game::NoAuthorization);
-            break;
-        case GUILD_ANS_EXIST_RELATIONSHIP_UNION:
-            wcscpy(szTemp, I18N::Game::AllianceGuild);
-            break;
-        case GUILD_ANS_EXIST_RELATIONSHIP_RIVAL:
-            wcscpy(szTemp, I18N::Game::HostileGuild);
-            break;
-        case GUILD_ANS_EXIST_UNION:
-            wcscpy(szTemp, I18N::Game::GuildAllianceExists);
-            break;
-        case GUILD_ANS_EXIST_RIVAL:
-            wcscpy(szTemp, I18N::Game::HostileGuildExists);
-            break;
-        case GUILD_ANS_NOTEXIST_UNION:
-            wcscpy(szTemp, I18N::Game::GuildAllianceDoesNotExist);
-            break;
-        case GUILD_ANS_NOTEXIST_RIVAL:
-            wcscpy(szTemp, I18N::Game::HostileGuildDoesNotExist);
-            break;
-        case GUILD_ANS_NOT_UNION_MASTER:
-            wcscpy(szTemp, I18N::Game::NotAMasterOfGuildAlliance);
-            break;
-        case GUILD_ANS_NOT_GUILD_RIVAL:
-            wcscpy(szTemp, I18N::Game::Income);
-            break;
-        case GUILD_ANS_CANNOT_BE_UNION_MASTER_GUILD:
-            wcscpy(szTemp, I18N::Game::IncompleteRequirementsForCreatingAGuildAlliance);
-            break;
-        case GUILD_ANS_EXCEED_MAX_UNION_MEMBER:
-            wcscpy(szTemp, I18N::Game::MaximumNoOfGuildAllianceIs7);
-            break;
-        case GUILD_ANS_CANCEL_REQUEST:
-            wcscpy(szTemp, I18N::Game::RequestHasBeenCancelled);
-            break;
-#ifdef ASG_ADD_GENS_SYSTEM
-        case GUILD_ANS_UNION_MASTER_NOT_GENS:
-            wcscpy(szTemp, I18N::Game::TheAllianceMasterHasNotJoinedTheGens);
-            break;
-        case GUILD_ANS_GUILD_MASTER_NOT_GENS:
-            wcscpy(szTemp, I18N::Game::TheGuildMasterHasNotJoinedTheGens);
-            break;
-        case GUILD_ANS_UNION_MASTER_DISAGREE_GENS:
-            wcscpy(szTemp, I18N::Game::YouAreWithADifferentGensThanTheAllianceMaster);
-            break;
-#endif // ASG_ADD_GENS_SYSTEM
-        default:
-            assert(!"Packet (0xE6)");
-            break;
-        }
-    }
-    UI::Chat::PostSystem(szTemp, mu::ui::window::TYPE_SYSTEM_MESSAGE);
 
-    int nCharKey = MAKEWORD(pData->byTargetUserIndexL, pData->byTargetUserIndexH);
-    if (nCharKey == HeroKey && pData->byResult == 0x01 && pData->byRelationShipType == 0x01 &&
-        pData->byRequestType == 0x02)
+    const wchar_t* text = UI::Guild::RelationshipResultText(*change);
+    if (text == nullptr)
+    {
+        mu::log::Get("network")->warn("NET: E6 guild relationship result with unknown codes ignored (type {}, request "
+                                      "{}, result 0x{:02X})",
+                                      change->relationshipType, change->requestType, change->result);
+        return;
+    }
+    UI::Chat::PostSystem(text, mu::ui::window::TYPE_SYSTEM_MESSAGE);
+
+    namespace GR = Network::Packets::GuildRelationship;
+
+    if (change->characterKey == HeroKey && change->result == GR::Success && change->relationshipType == GR::Alliance &&
+        change->requestType == GR::Leave && Hero->GuildMarkIndex != -1)
+    {
         GuildMark[Hero->GuildMarkIndex].UnionName[0] = 0;
+    }
 }
 
-void ReceiveBanUnionGuildResult(const BYTE* ReceiveBuffer)
+void ReceiveBanUnionGuildResult(std::span<const BYTE> ReceiveBuffer)
 {
-    auto pData = (LPPMSG_BAN_UNIONGUILD)ReceiveBuffer;
-    if (pData->byResult == 0x01)
+    const auto removal = Network::Packets::ParseRemoveAllianceGuildResult(ReceiveBuffer);
+    if (!removal)
+    {
+        mu::log::Get("network")->warn("NET: Invalid EB 01 remove-alliance-guild result packet dropped ({} bytes)",
+                                      ReceiveBuffer.size());
+        return;
+    }
+
+    if (removal->succeeded)
     {
         if (UI::Guild::AllianceGuildCount() > 2)
         {
@@ -8276,7 +8092,7 @@ void ReceiveBanUnionGuildResult(const BYTE* ReceiveBuffer)
         }
         UI::Guild::ClearAllianceGuilds();
     }
-    else if (pData->byResult == 0)
+    else
     {
         UI::Chat::PostSystem(I18N::Game::Failed, mu::ui::window::TYPE_SYSTEM_MESSAGE);
     }
@@ -10279,13 +10095,16 @@ void ReceiveOption(const BYTE* ReceiveBuffer)
 
     UI::Hud::ClearSkillHotkeys();
 
+    namespace Hotkeys = GameLogic::Skills::HotkeyConfiguration;
     int iHotKey;
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < Hotkeys::HotkeyCount; ++i)
     {
-        int iIndex = i * 2;
-        iHotKey = MAKEWORD(Data->HotKey[iIndex + 1], Data->HotKey[iIndex]);
+        int iIndex = i * Hotkeys::BytesPerHotkey;
+        iHotKey = Hotkeys::SkillNumber(Data->HotKey[iIndex], Data->HotKey[iIndex + 1]);
 
-        if (iHotKey != 0xffff)
+        // Zeros (OpenMU's default) would bind the hotkey to the first empty skill slot, which then shows
+        // the next learned skill.
+        if (Hotkeys::IsAssigned(static_cast<uint16_t>(iHotKey)))
         {
             for (int j = 0; j < MAX_SKILLS; ++j)
             {
@@ -10316,6 +10135,8 @@ void ReceiveOption(const BYTE* ReceiveBuffer)
     BYTE wChatListBoxBackAlpha = Data->ChatLogBox & 0x0F;
 
     UI::Hud::SetItemHotkey(UI::Hud::ItemHotkey::R, Data->KeyR + ITEM_POTION, byRLevel);
+
+    SetKeyConfigurationReceived(true);
 }
 
 void ReceiveEventChipInfomation(const BYTE* ReceiveBuffer)
@@ -12025,27 +11846,16 @@ void ReceivePreviewPort(std::span<const BYTE> ReceiveBuffer)
                 RegisterBuff(static_cast<eBuffState>(pData2->s_BuffEffectState[j]), o);
             }
 
-            c->PositionX = pData2->m_byPosX;
-            c->PositionY = pData2->m_byPosY;
-            c->TargetX = pData2->m_byPosX;
-            c->TargetY = pData2->m_byPosY;
             c->Object.Angle[2] = Random::Rand() % 360;
 
             c->m_iDeleteTime = 150;
 
-            if (gMapManager.InBattleCastle() && c->MonsterIndex == MONSTER_CASTLE_GATE1)
+            // A castle gate shows what its buff says (Q-MN38c); the preview
+            // closes only one without buffs.
+            if (gMapManager.InBattleCastle())
             {
-                //  State
-                if (g_isCharacterBuff((&c->Object), eBuff_CastleGateIsOpen))
-                {
-                    SetAction(&c->Object, 1);
-                    battleCastle::SetCastleGate_Attribute(pData2->m_byPosX, pData2->m_byPosY, 0);
-                }
-                else if (g_isNotCharacterBuff((&c->Object)))
-                {
-                    SetAction(&c->Object, 0);
-                    battleCastle::SetCastleGate_Attribute(pData2->m_byPosX, pData2->m_byPosY, 1);
-                }
+                if (const std::optional<battleCastle::GateLooks> gate = battleCastle::GateLooksOf(*c))
+                    battleCastle::ShowGateOnArrival(*c, *gate, pData2->m_byPosX, pData2->m_byPosY, true);
             }
         }
         break;
@@ -14082,18 +13892,23 @@ static void ProcessPacket(const BYTE* ReceiveBuffer, int32_t Size)
         ReceiveGuildAssign(ReceiveBuffer);
         break;
     case 0xE5:
-        ReceiveGuildRelationShip(ReceiveBuffer);
+        ReceiveGuildRelationShip(received_span);
         break;
     case 0xE6:
-        ReceiveGuildRelationShipResult(ReceiveBuffer);
+        ReceiveGuildRelationShipResult(received_span);
         break;
     case 0xEB:
     {
-        auto Data = (LPPHEADER_DEFAULT_SUBCODE)ReceiveBuffer;
-        switch (Data->SubCode)
+        constexpr std::size_t SubCodeOffset = 3;
+        if (received_span.size() <= SubCodeOffset)
+        {
+            mu::log::Get("network")->warn("NET: EB packet without a subcode dropped");
+            break;
+        }
+        switch (received_span[SubCodeOffset])
         {
         case 0x01:
-            ReceiveBanUnionGuildResult(ReceiveBuffer);
+            ReceiveBanUnionGuildResult(received_span);
             break;
         }
     }
@@ -15987,6 +15802,7 @@ void RegisterBuff(eBuffState buff, OBJECT* o, const int bufftime)
     if (CheckExceptionBuff(buff, o, false))
     {
         g_CharacterRegisterBuff(o, buff);
+        GameLogic::Monsters::Setup::NoteServerBuff(*o, static_cast<int>(buff), true);
 
         if (buffclasstype != eBuffClass_Count)
         {
@@ -15997,6 +15813,7 @@ void RegisterBuff(eBuffState buff, OBJECT* o, const int bufftime)
 
 void UnRegisterBuff(eBuffState buff, OBJECT* o)
 {
+    GameLogic::Monsters::Setup::NoteServerBuff(*o, static_cast<int>(buff), false);
     eBuffClass buffclasstype = g_IsBuffClass(buff);
 
     if (buffclasstype != eBuffClass_Count)

@@ -9,6 +9,7 @@ mu_add_test(
         test_item_edit_history.cpp
         test_item_ground_labels.cpp
         test_item_json.cpp
+        test_item_references.cpp
         test_item_list_model.cpp
         test_item_model_json.cpp
         test_item_model_display_json.cpp
@@ -36,6 +37,19 @@ mu_add_test(
         MuClient
 )
 target_compile_definitions(light_mood_data_tests PRIVATE
+    MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
+)
+
+# The buffs (Data/Buffs/Buffs.json, buffs design): reader, writer, checks, the
+# table and the game's buff info.
+mu_add_test(
+    NAME buff_data_tests
+    SOURCES
+        test_buffs.cpp
+    LINK_LIBS
+        MuClient
+)
+target_compile_definitions(buff_data_tests PRIVATE
     MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
 )
 
@@ -139,11 +153,13 @@ mu_add_test(
         test_monster_edit_history.cpp
         test_monster_grouped_edits.cpp
         test_monster_grouped_tools.cpp
+        test_monster_item_references.cpp
         test_monster_json.cpp
         test_monster_list_model.cpp
         test_monster_model_files.cpp
         test_monster_model_values.cpp
         test_monster_models_json.cpp
+        test_monster_setup_json.cpp
         test_monster_sound_files.cpp
         test_monster_sounds_json.cpp
         test_monster_names.cpp
@@ -185,6 +201,7 @@ mu_add_test(
     SOURCES
         test_helper_pickup_filters.cpp
         test_colors_window.cpp
+        test_critical_damage_rate.cpp
         test_style_editor.cpp
         test_dark_lord_pet_tooltip.cpp
         test_item_bytes.cpp
@@ -202,6 +219,7 @@ mu_add_test(
         test_item_sync_diff.cpp
         test_item_sync_server.cpp
         test_item_tooltip_text.cpp
+        test_item_texts.cpp
         test_item_tooltips.cpp
         test_item_value_formulas.cpp
         ${CMAKE_SOURCE_DIR}/src/source/App/Platform/Windows/Winmain.cpp

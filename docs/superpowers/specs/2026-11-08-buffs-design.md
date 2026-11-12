@@ -36,6 +36,9 @@ time left and the value of each buff on the hero.
   OpenMU change that sends the time left and the values.
 - **Later:** a Buffs tool in MuEditor; syncing the buff data with OpenMU's
   configuration (like items phase 7); buff visuals (the roadmap's "later" row).
+  The Buffs tool also carries a buff's `item` along when the item tools move
+  that item, as they carry the monsters' items; until then the buff keeps the
+  old place, which the start and Data Checks report as an error.
 - **Out:** skills as data (SK1); this area only reads the skill data's `Effect`
   field, which names a skill's buff.
 
@@ -319,6 +322,13 @@ AG use: 75
   tooltips show the same numbers as before, and lists where OpenMU stores a
   number another way (the Scroll of Defense shows +60 base defense; OpenMU adds
   half of it to the final defense, `BuffItems.cs:50-57`).
+- Every reader of those values moves to `Buffs.json` with it: the character
+  stats' item buffs (`CHARACTER_MACHINE` in `ZzzInfomation.cpp`: the scrolls,
+  elixirs, Jack O'Lantern drinks and cherry blossom petals), the Scroll of
+  Battle's critical damage rate (`GetHeroCriticalDamageRate`), the buff strip's
+  values and times (`w_BuffStateValueControl`, `w_BuffTimeControl`) and the
+  item tooltips. A reader left on the bmd would read 0 once the buff part is
+  gone.
 
 ## Pull requests
 

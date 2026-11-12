@@ -255,9 +255,6 @@ void MoveCamera()
 
 void CreateLogInScene()
 {
-#ifdef __EMSCRIPTEN__
-    mu::GetRenderer().CancelFrame();
-#endif
     EnableMainRender = true;
     gMapManager.WorldActive = WD_73NEW_LOGIN_SCENE;
 
@@ -303,9 +300,6 @@ void CreateLogInScene()
     g_fMULogoAlpha = 0;
 
     g_ErrorReport.Write(L"> Login Scene init success.\r\n");
-#ifdef __EMSCRIPTEN__
-    mu::GetRenderer().BeginFrame();
-#endif
 }
 
 // Moves the camera, builds the view the frame draws with, and culls the map objects and the effects against it.
@@ -330,7 +324,10 @@ static void UpdateLogInSceneView()
     ResetFrustrumBoundsFullTerrain();
     // Behind the credits the world is not drawn.
     if (!g_CreditWin.IsVisible())
+    {
         CullWorld();
+        Scenes::Lighting::PinWorldDynamicLights();
+    }
 }
 
 void PlayLogInSceneMusic()
@@ -346,11 +343,9 @@ void PlayLogInSceneMusic()
 
 void NewMoveLogInScene()
 {
+    // PrepareSceneBeforeFrame creates the scene, between frames.
     if (!InitLogIn)
-    {
-        InitLogIn = true;
-        CreateLogInScene();
-    }
+        return;
 
     PlayLogInSceneMusic();
 
@@ -445,7 +440,10 @@ bool NewRenderLogInScene(HDC hDC)
 
     if (!g_CreditWin.IsVisible())
     {
-        { FRAME_PROFILE(Terrain); RenderTerrain(false); }
+        {
+            FRAME_PROFILE(Terrain);
+            RenderTerrain(false);
+        }
         { FRAME_PROFILE(Characters); RenderCharactersClient(); }
         { FRAME_PROFILE(Objects); RenderMount(); }
         {

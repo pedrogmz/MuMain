@@ -68,6 +68,7 @@ namespace CfgKeys
     // The Enhanced look's features the player keeps on; Classic ignores them.
     inline constexpr wchar_t CfgKeyEnhancedLighting[] = L"EnhancedLighting";
     inline constexpr wchar_t CfgKeyDynamicLights[] = L"DynamicLights";
+    inline constexpr wchar_t CfgKeySunlight[] = L"Sunlight";
     inline constexpr wchar_t CfgKeyLightMood[] = L"LightMood";
     inline constexpr wchar_t CfgKeyPostProcessing[] = L"PostProcessing";
 
@@ -151,6 +152,7 @@ namespace CfgDefaults
     inline constexpr int CfgDefaultAntialiasing = 4;
     inline constexpr bool CfgDefaultEnhancedLighting = true;
     inline constexpr bool CfgDefaultDynamicLights = true;
+    inline constexpr bool CfgDefaultSunlight = true;
     inline constexpr bool CfgDefaultLightMood = true;
     inline constexpr bool CfgDefaultPostProcessing = true;
 
@@ -170,3 +172,11 @@ namespace CfgDefaults
     // platform, falling back to auto-pick with a warning log if it's unavailable.
     inline constexpr wchar_t CfgDefaultRenderBackend[] = L"default";
 }
+
+namespace CfgFiles
+{
+inline constexpr wchar_t CfgFileName[] = L"config.ini";
+// Developer builds (the control socket): the config file to use instead of the one beside the
+// executable, so a scripted client runs with settings of its own and leaves the player's alone.
+inline constexpr char CfgEnvConfigPath[] = "MU_CONFIG_PATH";
+} // namespace CfgFiles

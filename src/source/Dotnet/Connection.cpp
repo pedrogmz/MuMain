@@ -21,18 +21,19 @@
 #include "PacketFunctions_ConnectServer.h"
 #include "PacketFunctions_ClientToServer.h"
 
-// MEDIUM-4 fix: g_dotnetLibPath defined here (not in anonymous namespace in header) to prevent
-// per-TU copies if Connection.h is ever included by a second translation unit.
-// Declaration (extern) remains in Connection.h; only Connection.cpp includes Connection.h today.
-#ifdef __EMSCRIPTEN__
-const std::string g_dotnetLibPath = "wasm-network";
-const mu::platform::LibraryHandle munique_client_library_handle = nullptr;
-#else
-const std::string g_dotnetLibPath = ManagedLibraryPath();
+mu::platform::LibraryHandle munique_client_library_handle = nullptr;
 
-const mu::platform::LibraryHandle munique_client_library_handle =
-    mu::platform::Load(g_dotnetLibPath.c_str());
+void LoadManagedLibrary()
+{
+#ifndef __EMSCRIPTEN__
+    // The browser build has no managed library: Connection talks to the server over a WebSocket bridge.
+    static bool attempted = false;
+    if (attempted)
+        return;
+    attempted = true;
+    munique_client_library_handle = mu::platform::Load(ManagedLibraryPath().c_str());
 #endif
+}
 
 namespace
 {
@@ -93,6 +94,7 @@ void InitializeDotNetBridge()
 #ifdef __EMSCRIPTEN__
     mu::log::Get("dotnet")->info("NET: InitializeDotNetBridge -- WASM WebSocket bridge active");
 #else
+    LoadManagedLibrary();
     if (!munique_client_library_handle)
     {
         mu::log::Get("dotnet")->error("NET: InitializeDotNetBridge -- library not loaded, skipping");
@@ -158,7 +160,7 @@ void ReportDotNetError(const char* detail, DotNetErrorKind kind)
     if (kind == DotNetErrorKind::LibraryNotFound)
     {
         // AC-1: Library not found — include resolved path and platform
-        msg = FormatLibraryNotFoundMessage(g_dotnetLibPath, platformName);
+        msg = FormatLibraryNotFoundMessage(ManagedLibraryPath(), platformName);
     }
     else
     {
@@ -185,6 +187,7 @@ bool IsManagedLibraryAvailable()
         return true;
     }
 
+    // AC-1: ReportDotNetError names the library path and platform
     ReportDotNetError(nullptr, DotNetErrorKind::LibraryNotFound);
     return false;
 #endif
