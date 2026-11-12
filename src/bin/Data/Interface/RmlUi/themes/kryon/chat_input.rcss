@@ -1,0 +1,175 @@
+/* Kryon theme for CChatInputBox (pairs with this folder's chat_input.rml fork). The Season 6 chat
+   deck: bronze tabs over a rounded message field, the window toggles in the gear's menu. The box
+   keeps native's 281 x 47 footprint (see legacy/chat_input.rcss for where that comes from); the
+   pieces are cut by tools/kryon_theme/make_kryon_chat_textures.py, which prints the rects below. */
+
+@spritesheet kryon-chat-tab-sheet { src: ui/chat_tab.tga;
+	kryon-chat-tab: 0px 0px 54px 19px; kryon-chat-tab-inner: 10px 7px 34px 5px; }
+@spritesheet kryon-chat-tab-hover-sheet { src: ui/chat_tab_hover.tga;
+	kryon-chat-tab-hover: 0px 0px 54px 19px; kryon-chat-tab-hover-inner: 10px 7px 34px 5px; }
+@spritesheet kryon-chat-tab-on-sheet { src: ui/chat_tab_on.tga;
+	kryon-chat-tab-on: 0px 0px 54px 19px; kryon-chat-tab-on-inner: 10px 7px 34px 5px; }
+@spritesheet kryon-chat-field-sheet { src: ui/chat_field.tga;
+	kryon-chat-field: 0px 0px 100px 22px; kryon-chat-field-inner: 12px 8px 76px 6px; }
+
+#panel.workspace-placed { bottom: auto; transform-origin: left top; }
+#panel {
+	position: absolute;
+	left: 0;
+	bottom: 51dp;
+	width: 281dp;
+	height: 47dp;
+	font-family: "token(font-body)";
+	font-size: 1rem;
+	/* The bar takes the pointer, so a click on it never walks the character. */
+	pointer-events: auto;
+}
+
+/* ---- Tabs ---------------------------------------------------------------- */
+#cib_tabs {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 281dp;
+	height: 20dp;
+}
+.cib-btn {
+	pointer-events: auto;
+	cursor: pointer;
+}
+.cib-tab {
+	position: absolute;
+	top: 0;
+	height: 20dp;
+	line-height: 20dp;
+	text-align: center;
+	font-family: "token(font-title)";
+	font-size: 10dp;
+	color: #c9b48a;
+	decorator: ninepatch(kryon-chat-tab, kryon-chat-tab-inner, 6dp 6dp 6dp 6dp);
+}
+.cib-tab:hover {
+	color: #f3d79a;
+	decorator: ninepatch(kryon-chat-tab-hover, kryon-chat-tab-hover-inner, 6dp 6dp 6dp 6dp);
+}
+.cib-tab.on {
+	color: #ffe9b8;
+	font-weight: bold;
+	decorator: ninepatch(kryon-chat-tab-on, kryon-chat-tab-on-inner, 6dp 6dp 6dp 6dp);
+}
+.cib-tab:active { filter: brightness(0.8); }
+
+/* A toggle tab reads its state from its lettering: struck through and dim while its messages
+   are off. */
+.cib-toggle.off { color: #7d6a52; text-decoration: line-through; }
+.cib-toggle.off:hover { color: #a8916f; }
+
+.cib-btn-normal  { left: 0;     width: 47dp; }
+.cib-btn-party   { left: 48dp;  width: 38dp; }
+.cib-btn-guild   { left: 87dp;  width: 38dp; }
+.cib-btn-gens    { left: 126dp; width: 35dp; }
+.cib-btn-whisper { left: 164dp; width: 46dp; }
+.cib-btn-system  { left: 211dp; width: 44dp; }
+
+/* ---- Gear and its menu ----------------------------------------------------- */
+#cib_gear {
+	position: absolute;
+	left: 258dp;
+	top: -1dp;
+	width: 22dp;
+	height: 22dp;
+	cursor: pointer;
+	pointer-events: auto;
+	decorator: image(ui/chat_gear.tga);
+}
+#cib_gear:hover { decorator: image(ui/chat_gear_hover.tga); }
+
+#cib_menu {
+	display: none;
+	position: absolute;
+	right: -1dp;
+	bottom: 22dp;
+	width: 215dp;
+	padding: 7dp 7dp 9dp 7dp;
+	decorator: ninepatch(kryon-panel, kryon-panel-inner, 8dp 9dp 8dp 9dp);
+	pointer-events: auto;
+}
+#cib_gear:hover #cib_menu { display: block; }
+
+.cib-menu-row {
+	display: block;
+	height: 17dp;
+	line-height: 17dp;
+	padding: 0 6dp 0 16dp;
+	margin-top: 1dp;
+	font-size: 10dp;
+	white-space: nowrap;
+	overflow: hidden;
+	color: #a8916f;
+	border-radius: 4dp;
+	/* The unlit lamp at the row's start. */
+	decorator: radial-gradient(circle at 7dp 50%, rgba(90, 66, 40, 255) 0dp, rgba(90, 66, 40, 255) 3dp, transparent 4dp);
+}
+.cib-menu-row:hover { background-color: rgba(163, 111, 61, 60); color: #f3d79a; }
+.cib-menu-row.on {
+	color: #f3d79a;
+	decorator: radial-gradient(circle at 7dp 50%, #ffd988 0dp, #ffd988 3dp, transparent 4dp);
+}
+/* The two steppers act rather than toggle: an arrow, not a lamp. */
+.cib-menu-row.cib-menu-action { decorator: none; padding-left: 6dp; }
+.cib-menu-row.cib-menu-action:hover { color: #ffe9b8; }
+.cib-menu-row.hidden { display: none; }
+
+/* ---- Fields ---------------------------------------------------------------- */
+body .cib-whisper-field,
+body .cib-chat-field {
+	position: absolute;
+	top: 23dp;
+	height: 23dp;
+	padding: 5dp 9dp 0 9dp;
+	font-size: 11dp;
+	color: token(text-primary);
+	background-color: transparent;
+	border-width: 0;
+	border-radius: 0;
+	box-shadow: none;
+	decorator: ninepatch(kryon-chat-field, kryon-chat-field-inner, 7dp 9dp 7dp 9dp);
+}
+body .cib-whisper-field { left: 0; width: 62dp; }
+body .cib-chat-field { left: 64dp; width: 190dp; }
+body .cib-whisper-field:focus,
+body .cib-chat-field:focus { color: #fff3d2; }
+body .cib-whisper-field:disabled { color: token(text-disabled); decorator: ninepatch(kryon-chat-field, kryon-chat-field-inner, 7dp 9dp 7dp 9dp); }
+
+#whisper_block {
+	position: absolute;
+	left: 3dp;
+	top: 26dp;
+	width: 56dp;
+	height: 17dp;
+	background-color: rgba(128, 40, 30, 70);
+	border-radius: 6dp;
+	pointer-events: none;
+}
+
+/* ---- Send ------------------------------------------------------------------ */
+@spritesheet kryon-chat-knob-sheet { src: ui/chat_knob.tga;
+	kryon-chat-knob: 0px 0px 31px 27px; kryon-chat-knob-inner: 8px 8px 15px 11px; }
+@spritesheet kryon-chat-knob-hover-sheet { src: ui/chat_knob_hover.tga;
+	kryon-chat-knob-hover: 0px 0px 31px 27px; kryon-chat-knob-hover-inner: 8px 8px 15px 11px; }
+.cib-send {
+	position: absolute;
+	left: 256dp;
+	top: 22dp;
+	width: 25dp;
+	height: 25dp;
+	decorator:
+		image(ui/chat_arrow_right.tga none scale-none center center),
+		ninepatch(kryon-chat-knob, kryon-chat-knob-inner, 7dp 7dp 7dp 7dp);
+}
+.cib-send:hover {
+	decorator:
+		image(ui/chat_arrow_right.tga none scale-none center center),
+		ninepatch(kryon-chat-knob-hover, kryon-chat-knob-hover-inner, 7dp 7dp 7dp 7dp);
+}
+.cib-send:active { filter: brightness(0.8); }

@@ -324,94 +324,10 @@ bool mu::ui::window::CChatInputBox::UpdateKeyEvent()
         return false;
     }
 
-    const uint64_t currentTickCount = GetTickCount64();
     if (IsVisible() && HaveFocus() && mu::ui::window::IsPress(VK_RETURN)
-        && m_lastChatTime < currentTickCount - ChatCooldownMs)
+        && m_lastChatTime < GetTickCount64() - ChatCooldownMs)
     {
-        m_lastChatTime = currentTickCount;
-        wchar_t	szChatText[MAX_CHAT_SIZE + 1] = { '\0' };
-        wchar_t	szWhisperID[MAX_USERNAME_SIZE + 1] = { '\0' };
-
-        {
-            type_string strChat, strWhisper;
-            GetChatText(strChat);
-            GetWhsprID(strWhisper);
-            wcsncpy(szChatText, strChat.c_str(), MAX_CHAT_SIZE);
-            szChatText[MAX_CHAT_SIZE] = L'\0';
-            wcsncpy(szWhisperID, strWhisper.c_str(), MAX_USERNAME_SIZE);
-            szWhisperID[MAX_USERNAME_SIZE] = L'\0';
-        }
-
-        //for (int i = 0; i < MAX_CHAT_SIZE; i++)
-        //    szReceivedChat[i] = g_pMultiLanguage->ConvertFulltoHalfWidthChar(szReceivedChat[i]);
-
-        std::wstring wstrText = L"";
-
-        if (szChatText[0] != 0x002F)
-        {
-            switch (m_iInputMsgType) {
-            case INPUT_PARTY_MESSAGE:
-                wstrText = L"~";
-                break;
-            case INPUT_GUILD_MESSAGE:
-                wstrText = L"@";
-                break;
-            case INPUT_GENS_MESSAGE:
-                wstrText = L"$";
-                break;
-            default:
-                break;
-            }
-        }
-        wstrText.append(szChatText);
-
-        if (wcslen(szChatText) != 0)
-        {
-            if (!CheckCommand(szChatText))
-            {
-                {
-                    //if (CheckAbuseFilter(szChatText))
-                    //{
-                    //    wstrText = I18N::Game::PwnedByTheFilter;
-                    //}
-
-                    if (m_bWhisperSend && wcslen(szChatText) && wcslen(szWhisperID) > 0)
-                    {
-                        SocketClient->ToGameServer()->SendWhisperMessage(MU_C16(szWhisperID), MU_C16(wstrText.c_str()));
-                        g_pChatListBox->AddText(Hero->ID, szChatText, mu::ui::window::TYPE_WHISPER_MESSAGE);
-                        AddWhsprIDHistory(szWhisperID);
-                    }
-                    else if (wcsncmp(szChatText, I18N::Game::Warp, wcslen(I18N::Game::Warp)) == 0)
-                    {
-                        wchar_t* pszMapName = szChatText + wcslen(I18N::Game::Warp) + 1;
-                        int iMapIndex = g_pMoveCommandWindow->GetMapIndexFromMovereq(pszMapName);
-
-                        if (g_pMoveCommandWindow->IsTheMapInDifferentServer(gMapManager.WorldActive, iMapIndex))
-                        {
-                            SaveOptions();
-                        }
-
-                        SocketClient->ToGameServer()->SendWarpCommandRequest(g_pMoveCommandWindow->GetMoveCommandKey(), iMapIndex);
-                    }
-                    else
-                    {
-                        if (Hero->SafeZone || !GameLogic::Items::IsRideableMountModel(Hero->Helper.Type))
-                        {
-                            UI::Chat::CheckChatText(szChatText);
-                        }
-
-                        SocketClient->ToGameServer()->SendPublicChatMessage(MU_C16(Hero->ID), MU_C16(wstrText.c_str()));
-                        AddChatHistory(wstrText);
-                    }
-                }
-            }
-        }
-        SetFieldText("chat_field", L"");
-        m_iCurChatHistory = m_iCurWhisperIDHistory = 0;
-
-        SaveIMEStatus();
-
-        g_pNewUISystem->Hide(mu::ui::window::INTERFACE_CHATINPUTBOX);
+        SendChatMessage();
         return false;
     }
     if (IsVisible() && IsFieldFocused("chat_field"))
@@ -476,8 +392,110 @@ bool mu::ui::window::CChatInputBox::UpdateKeyEvent()
     return true;
 }
 
+// Sends what the fields hold -- Enter in the message field, or the send button -- then closes the box.
+void mu::ui::window::CChatInputBox::SendChatMessage()
+{
+    const uint64_t currentTickCount = GetTickCount64();
+    if (m_lastChatTime >= currentTickCount - ChatCooldownMs)
+        return;
+    m_lastChatTime = currentTickCount;
+
+    wchar_t	szChatText[MAX_CHAT_SIZE + 1] = { '\0' };
+    wchar_t	szWhisperID[MAX_USERNAME_SIZE + 1] = { '\0' };
+
+    {
+        type_string strChat, strWhisper;
+        GetChatText(strChat);
+        GetWhsprID(strWhisper);
+        wcsncpy(szChatText, strChat.c_str(), MAX_CHAT_SIZE);
+        szChatText[MAX_CHAT_SIZE] = L'\0';
+        wcsncpy(szWhisperID, strWhisper.c_str(), MAX_USERNAME_SIZE);
+        szWhisperID[MAX_USERNAME_SIZE] = L'\0';
+    }
+
+    //for (int i = 0; i < MAX_CHAT_SIZE; i++)
+    //    szReceivedChat[i] = g_pMultiLanguage->ConvertFulltoHalfWidthChar(szReceivedChat[i]);
+
+    std::wstring wstrText = L"";
+
+    if (szChatText[0] != 0x002F)
+    {
+        switch (m_iInputMsgType) {
+        case INPUT_PARTY_MESSAGE:
+            wstrText = L"~";
+            break;
+        case INPUT_GUILD_MESSAGE:
+            wstrText = L"@";
+            break;
+        case INPUT_GENS_MESSAGE:
+            wstrText = L"$";
+            break;
+        default:
+            break;
+        }
+    }
+    wstrText.append(szChatText);
+
+    if (wcslen(szChatText) != 0)
+    {
+        if (!CheckCommand(szChatText))
+        {
+            {
+                //if (CheckAbuseFilter(szChatText))
+                //{
+                //    wstrText = I18N::Game::PwnedByTheFilter;
+                //}
+
+                if (m_bWhisperSend && wcslen(szChatText) && wcslen(szWhisperID) > 0)
+                {
+                    SocketClient->ToGameServer()->SendWhisperMessage(MU_C16(szWhisperID), MU_C16(wstrText.c_str()));
+                    g_pChatListBox->AddText(Hero->ID, szChatText, mu::ui::window::TYPE_WHISPER_MESSAGE);
+                    AddWhsprIDHistory(szWhisperID);
+                }
+                else if (wcsncmp(szChatText, I18N::Game::Warp, wcslen(I18N::Game::Warp)) == 0)
+                {
+                    wchar_t* pszMapName = szChatText + wcslen(I18N::Game::Warp) + 1;
+                    int iMapIndex = g_pMoveCommandWindow->GetMapIndexFromMovereq(pszMapName);
+
+                    if (g_pMoveCommandWindow->IsTheMapInDifferentServer(gMapManager.WorldActive, iMapIndex))
+                    {
+                        SaveOptions();
+                    }
+
+                    SocketClient->ToGameServer()->SendWarpCommandRequest(g_pMoveCommandWindow->GetMoveCommandKey(), iMapIndex);
+                }
+                else
+                {
+                    if (Hero->SafeZone || !GameLogic::Items::IsRideableMountModel(Hero->Helper.Type))
+                    {
+                        UI::Chat::CheckChatText(szChatText);
+                    }
+
+                    SocketClient->ToGameServer()->SendPublicChatMessage(MU_C16(Hero->ID), MU_C16(wstrText.c_str()));
+                    AddChatHistory(wstrText);
+                }
+            }
+        }
+    }
+    SetFieldText("chat_field", L"");
+    m_iCurChatHistory = m_iCurWhisperIDHistory = 0;
+
+    SaveIMEStatus();
+
+    g_pNewUISystem->Hide(mu::ui::window::INTERFACE_CHATINPUTBOX);
+}
+
 bool mu::ui::window::CChatInputBox::Update()
 {
+    // The send button's request (chat_send). Here rather than in UpdateKeyEvent(): clicking the
+    // button takes the focus off the field, and the key pass only reaches this box while it types.
+    if (m_bSendPending)
+    {
+        m_bSendPending = false;
+        if (IsVisible())
+            SendChatMessage();
+    }
+
     BuildRmlUi();
     SyncRmlModel();
     return true;
@@ -556,6 +574,14 @@ void mu::ui::window::CChatInputBox::BindRmlModel(Rml::DataModelConstructor& c, C
             m_pNewUIChatLogWnd->SetSizeAuto();
             m_pNewUIChatLogWnd->UpdateWndSize();
             m_pNewUIChatLogWnd->UpdateScrollPos();
+            PlayBuffer(SOUND_CLICK01);
+        });
+
+    // The send button: the same send as Enter, on Update()'s next pass (m_bSendPending).
+    c.BindEventCallback("chat_send",
+        [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&)
+        {
+            m_bSendPending = true;
             PlayBuffer(SOUND_CLICK01);
         });
 
@@ -683,6 +709,7 @@ void mu::ui::window::CChatInputBox::ClosingProcess()
     m_pNewUIChatLogWnd->HideFrame();
 
     m_bFocusPending = false;
+    m_bSendPending = false;
     if (Rml::Element* field = GetField("chat_field")) field->Blur();
     if (Rml::Element* field = GetField("whisper_field")) field->Blur();
 

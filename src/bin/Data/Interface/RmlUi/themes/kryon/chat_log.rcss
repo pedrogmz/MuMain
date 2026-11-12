@@ -158,3 +158,77 @@
 	decorator: ninepatch(kryon-panel, kryon-panel-inner, 8dp 9dp 8dp 9dp);
 	opacity: 0.88;
 }
+
+/* --------------------------------------------------------------------------
+   Kryon chat deck: the Season 6 chat frame. Pairs with this folder's chat_log.rml fork (#chat_ring)
+   and chat_input.rml fork (the tabs and field under it). The pieces are cut by
+   tools/kryon_theme/make_kryon_chat_textures.py, which prints the rects below.
+   -------------------------------------------------------------------------- */
+@spritesheet kryon-chat-thumb-sheet { src: ui/chat_thumb.tga;
+	kryon-chat-thumb: 0px 0px 12px 44px; kryon-chat-thumb-inner: 0px 5px 12px 34px; }
+
+/* The ring with gold corner gems, over the plate's edge; unfaded by the transparency step. */
+#chat_ring {
+	display: none;
+	position: absolute;
+	left: -5dp;
+	top: -5dp;
+	right: -5dp;
+	bottom: -5dp;
+	z-index: 2;
+	pointer-events: none;
+	decorator: ninepatch(kryon-frame, kryon-frame-inner, 17dp 17dp 17dp 17dp);
+}
+#panel.framed #chat_ring { display: block; }
+
+/* The resize grip: a short bronze rail centred over the ring's top edge. */
+#resize_handle {
+	left: 110dp;
+	width: 61dp;
+	top: -12dp;
+	height: 6dp;
+	z-index: 3;
+	border-radius: 3dp;
+	background-color: rgba(122, 84, 41, 200);
+}
+#resize_handle:hover { background-color: #c9a55a; }
+#resize_handle:active { background-color: #ffd988; }
+
+/* Lines: the type's colour carries it, as in the Season 6 deck -- no accent bar. Over the world
+   (frame off) each line keeps a soft ground; on the plate it needs none. */
+.chat-line { border-left-width: 0; padding: 0 3dp; }
+#panel.framed .chat-line { background-color: transparent; }
+#panel.framed .chat-line--pointed { background-color: rgba(163, 111, 61, 70); }
+#panel.framed #lines { left: 7dp; top: 6dp; right: 4dp; }
+
+/* The scrollbar: a dark groove between two bronze arrows, with the upright bar frame as thumb.
+   The arrows step the view a line at a time (RmlUi's own slider arrows). */
+#panel.framed #lines scrollbarvertical { width: 12dp; margin-left: 3dp; }
+#lines scrollbarvertical slidertrack {
+	background-color: rgba(5, 4, 3, 200);
+	border: 1dp rgba(122, 84, 41, 180);
+	border-radius: 3dp;
+}
+#lines scrollbarvertical sliderbar {
+	background-color: transparent;
+	box-shadow: none;
+	border-radius: 0;
+	min-height: 16dp;
+	decorator: ninepatch(kryon-chat-thumb, kryon-chat-thumb-inner, 4dp 0dp 4dp 0dp);
+}
+#lines scrollbarvertical sliderbar:hover,
+#lines scrollbarvertical sliderbar:active {
+	background-color: transparent;
+	filter: brightness(1.3);
+}
+#panel.framed #lines scrollbarvertical sliderarrowdec,
+#panel.framed #lines scrollbarvertical sliderarrowinc {
+	width: 12dp;
+	height: 9dp;
+	pointer-events: auto;
+	cursor: pointer;
+}
+#panel.framed #lines scrollbarvertical sliderarrowdec { decorator: image(ui/chat_arrow_up.tga); margin-bottom: 1dp; }
+#panel.framed #lines scrollbarvertical sliderarrowinc { decorator: image(ui/chat_arrow_down.tga); margin-top: 1dp; }
+#lines scrollbarvertical sliderarrowdec:hover,
+#lines scrollbarvertical sliderarrowinc:hover { filter: brightness(1.4); }

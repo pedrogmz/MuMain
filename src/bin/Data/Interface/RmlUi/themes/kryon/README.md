@@ -121,7 +121,7 @@ faces cannot load, RmlUi falls back to the bundled Liberation Sans.
 | Shared chrome | `base.rcss` |
 | Login and scene | `login.rcss`, `title_scene.rcss` |
 | Main menu / dialogs | `sys_menu.rcss`, `option_window.rcss`, `generic_confirm_dialog.rcss`, `generic_menu_dialog.rcss` |
-| HUD / chat | `main_frame.rcss`, `main_frame_top.rcss`, `mu_helper_bar.rcss`, `chat_log.rcss`, `item_grid.rcss`, `tooltip.rcss` |
+| HUD / chat | `main_frame.rcss`, `main_frame_top.rcss`, `mu_helper_bar.rcss`, `chat_log.rml`/`.rcss`, `chat_input.rml`/`.rcss` (Season 6 chat deck: tabs, gear menu, framed log; art by `tools/kryon_theme/make_kryon_chat_textures.py`), `item_grid.rcss`, `tooltip.rcss` |
 | Letters | `letter_read.rcss`, `letter_write.rcss` |
 | Inventory family | `my_inventory.rcss`, `trade.rcss`, `storage.rcss`, `storage_ext.rcss`, `npc_shop.rcss`, `my_shop.rcss`, `purchase_shop.rcss`, `inventory_extension.rcss`, `mix_inventory.rcss`, `lucky_item.rcss` |
 | Docked windows | `docked_panel_frame.rcss`, `character_info.rcss` |

@@ -1,0 +1,62 @@
+<rml>
+<head>
+	<title>Chat Input</title>
+	<link type="text/rcss" href="base.rcss"/>
+	<link type="text/rcss" href="chat_input.rcss"/>
+</head>
+<body class="native-text" data-model="chat_input">
+	<!-- Kryon fork of chat_input.rml: the same ids, bindings and callbacks, laid out as the Season 6
+	     chat deck -- a row of tabs over the message field, with the window toggles folded into the
+	     gear's menu. The box keeps native's 281 x 47 footprint (CChatInputBox::CHATBOX_WIDTH/HEIGHT,
+	     which the workspace's chat stack measures); only the gear's menu reaches above it. -->
+	<div id="panel">
+		<div id="cib_tabs">
+			<!-- Input target: normal / party / guild / gens. Exactly one is lit at a time. -->
+			<div id="btn_type_0" class="cib-btn cib-tab cib-btn-normal" data-class-on="input_msg_type == 0"
+			     data-event-click="chat_set_type(0)" data-attr-data-hint="hint_0">General</div>
+			<div id="btn_type_1" class="cib-btn cib-tab cib-btn-party" data-class-on="input_msg_type == 1"
+			     data-event-click="chat_set_type(1)" data-attr-data-hint="hint_1">Party</div>
+			<div id="btn_type_2" class="cib-btn cib-tab cib-btn-guild" data-class-on="input_msg_type == 2"
+			     data-event-click="chat_set_type(2)" data-attr-data-hint="hint_2">Guild</div>
+			<div id="btn_type_3" class="cib-btn cib-tab cib-btn-gens" data-class-on="input_msg_type == 3"
+			     data-event-click="chat_set_type(3)" data-attr-data-hint="hint_3">Gens</div>
+
+			<!-- Independent toggles, as tabs that are struck through while their messages are off:
+			     whispers are off while blocked, system messages while hidden. -->
+			<div id="btn_whisper" class="cib-btn cib-tab cib-toggle cib-btn-whisper" data-class-off="block_whisper"
+			     data-event-click="chat_toggle_whisper_block" data-attr-data-hint="hint_4">Whisper</div>
+			<div id="btn_system" class="cib-btn cib-tab cib-toggle cib-btn-system" data-class-off="!show_system"
+			     data-event-click="chat_toggle_system" data-attr-data-hint="hint_5">System</div>
+
+			<!-- The gear: its menu opens while the pointer is over it (the menu is its child, so
+			     moving onto the menu keeps it open). -->
+			<div id="cib_gear">
+				<div id="cib_menu">
+					<div id="btn_chatlog" class="cib-btn cib-menu-row cib-btn-chatlog" data-class-on="show_chat_log"
+					     data-event-click="chat_toggle_chatlog" data-attr-data-hint="hint_6">{{hint_6}}</div>
+					<div id="btn_frame" class="cib-btn cib-menu-row cib-btn-frame" data-class-on="show_frame"
+					     data-event-click="chat_toggle_frame" data-attr-data-hint="hint_7">{{hint_7}}</div>
+					<!-- These two only exist while the chat log frame is shown, matching native, which
+					     renders them from inside its own IsShowFrame() branch. -->
+					<div id="btn_size" class="cib-btn cib-menu-row cib-menu-action cib-btn-size on" data-class-hidden="!show_frame"
+					     data-event-click="chat_size_step" data-attr-data-hint="hint_8">{{hint_8}}</div>
+					<div id="btn_transparency" class="cib-btn cib-menu-row cib-menu-action cib-btn-alpha on" data-class-hidden="!show_frame"
+					     data-event-click="chat_alpha_step" data-attr-data-hint="hint_9">{{hint_9}}</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Whisper target, then the message itself. Tab moves between them: that is RmlUi's own
+		     built-in document navigation, which replaces native's SetTabTarget() pairing. -->
+		<input id="whisper_field" type="text" class="text-field cib-whisper-field"
+		       data-value="whisper_id" data-attrif-disabled="!whisper_send"/>
+		<!-- Native hides the whisper widget when whispering is off but still paints its text
+		     dimmed under a red wash; this overlay is that wash. -->
+		<div id="whisper_block" data-class-hidden="whisper_send"></div>
+
+		<input id="chat_field" type="text" class="text-field cib-chat-field" data-value="chat_text"/>
+		<!-- Sends like Enter does (CChatInputBox: chat_send defers to the next key pass). -->
+		<div id="btn_send" class="cib-btn cib-send" data-event-click="chat_send"></div>
+	</div>
+</body>
+</rml>

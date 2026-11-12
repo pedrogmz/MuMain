@@ -95,6 +95,7 @@ namespace mu::ui::window
         bool IsFieldFocused(const char* id) const;
         void SetFieldText(const char* id, const type_string& text);
         void FocusField(const char* id);
+        void SendChatMessage();
 
         void BindRmlModel(Rml::DataModelConstructor& c, ChatInputRmlModel& model);
         void OnRmlReloaded();
@@ -107,6 +108,9 @@ namespace mu::ui::window
         // happen after SyncDocumentVisibility()'s own Show(), which defaults to FocusFlag::Auto and
         // would blur the field again.
         bool m_bFocusPending = false;
+        // Set by the send button (chat_send); Update() sends the message on its next pass, as Enter
+        // does. Deferred so the box is not hidden from inside its own click event.
+        bool m_bSendPending = false;
 
     public:
         CChatInputBox();
