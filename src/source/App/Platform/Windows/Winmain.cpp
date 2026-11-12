@@ -1116,8 +1116,7 @@ void HandleMouseButton(const SDL_Event& e)
     HandleMouseMotion(e.button.x, e.button.y);
     const bool down = (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
 #ifdef __EMSCRIPTEN__
-    fprintf(stderr, "[InputDiag] HandleMouseButton: btn=%d down=%d raw=(%.1f,%.1f) logical=(%d,%d) active=%d
-",
+    fprintf(stderr, "[InputDiag] HandleMouseButton: btn=%d down=%d raw=(%.1f,%.1f) logical=(%d,%d) active=%d\n",
             e.button.button, (int)down, e.button.x, e.button.y, MouseX, MouseY, (int)g_bWndActive);
 #endif
     if (InputDiagnosticsEnabled())
@@ -1490,8 +1489,7 @@ bool RouteActionInput(SDL_Event& event, bool synthetic, bool& propagates)
             Core::Input::Synthetic::CancelForPhysicalButton(event.button.button);
         propagates = Core::Input::RouteToUi(event, g_sdlWindow) || PassesRightButtonToGame(event);
 #ifdef __EMSCRIPTEN__
-        fprintf(stderr, "[InputDiag] RouteActionInput: %s btn=%d raw=(%.1f,%.1f) propagates=%d synthetic=%d active=%d
-",
+        fprintf(stderr, "[InputDiag] RouteActionInput: %s btn=%d raw=(%.1f,%.1f) propagates=%d synthetic=%d active=%d\n",
                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "DOWN" : "UP",
                 event.button.button, event.button.x, event.button.y, (int)propagates, (int)synthetic, (int)g_bWndActive);
 #endif
@@ -1628,8 +1626,7 @@ bool HandleClientEvent(SDL_Event& event)
 #ifdef __EMSCRIPTEN__
 extern "C" EMSCRIPTEN_KEEPALIVE void MuWebSetWindowActive(int active)
 {
-    fprintf(stderr, "[MuWebSetWindowActive] called active=%d (current g_bWndActive=%d)
-", active, (int)g_bWndActive);
+    fprintf(stderr, "[MuWebSetWindowActive] called active=%d (current g_bWndActive=%d)\n", active, (int)g_bWndActive);
     HandleFocusChange(active != 0);
 }
 #endif

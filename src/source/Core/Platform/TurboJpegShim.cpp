@@ -36,6 +36,12 @@ char* tjGetErrorStr(void)
     return errMsg;
 }
 
+char* tjGetErrorStr2(tjhandle handle)
+{
+    (void)handle;
+    return tjGetErrorStr();
+}
+
 unsigned long tjBufSize(int width, int height, int jpegSubsamp)
 {
     (void)jpegSubsamp;
