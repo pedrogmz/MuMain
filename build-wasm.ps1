@@ -5,7 +5,14 @@ param (
 $ErrorActionPreference = "Stop"
 
 $repoRoot = $PSScriptRoot
-$stackPublic = Join-Path (Split-Path $PSScriptRoot -Parent) "openmu-browser-stack\public"
+# The proxy repo lives next to this checkout; it was renamed from
+# openmu-browser-stack to open-mu-browser-proxy, so accept either name.
+$workspace = Split-Path $PSScriptRoot -Parent
+$stackPublic = @("open-mu-browser-proxy", "openmu-browser-stack") |
+    ForEach-Object { Join-Path $workspace "$_\public" } |
+    Where-Object { Test-Path $_ } |
+    Select-Object -First 1
+if (-not $stackPublic) { $stackPublic = Join-Path $workspace "open-mu-browser-proxy\public" }
 
 $env:PATH = "C:\Users\Poisson\.local\dotnet;C:\Users\Poisson\.local\cmake-3.31.5-windows-x86_64\bin;C:\Users\Poisson\.local\bin;C:\Users\Poisson\emsdk;C:\Users\Poisson\emsdk\upstream\emscripten;C:\Users\Poisson\emsdk\node\24.19.0_64bit\bin;C:\Users\Poisson\emsdk\python\3.13.3_64bit;" + $env:PATH
 
@@ -41,7 +48,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "=== Deploying to openmu-browser-stack/public ===" -ForegroundColor Cyan
+Write-Host "=== Deploying to $stackPublic ===" -ForegroundColor Cyan
 if (Test-Path $stackPublic) {
     Write-Host "=== Packaging data buckets (Data, fonts) ===" -ForegroundColor Cyan
     $bucketScript = Join-Path (Split-Path $stackPublic -Parent) "scripts\build-data-buckets.js"
