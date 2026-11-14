@@ -6,11 +6,14 @@
 // case by case (D50) before it went.
 
 #include "MonsterCreationRecorder.h"
+#include "../data/BuffTableScope.h"
 #include "../data/LogCapture.h"
 
 #include "doctest.h"
 
 #include "Audio/DSPlaySound.h"
+#include "Data/DataHandler/BuffData/BuffStorage.h"
+#include "Data/DataHandler/MonsterData/MonsterJsonStorage.h"
 #include "Data/DataHandler/MonsterData/MonsterModelLoader.h"
 #include "Data/GameData/MonsterData/MonsterAnimations.h"
 #include "Data/GameData/MonsterData/MonsterDatabase.h"
@@ -21,6 +24,7 @@
 #include "GameLogic/Events/w_CursedTemple.h"
 #include "GameLogic/Monsters/MonsterSetupApply.h"
 #include "GameLogic/Monsters/UnknownMonsters.h"
+#include "Render/Effects/StatDownDebuffLights.h"
 #include "Render/Effects/ZzzEffect.h"
 #include "Engine/AI/GOBoid.h"
 #include "Engine/Object/ZzzCharacter.h"
@@ -545,6 +549,46 @@ TEST_CASE("Monster setup: a buff sent again keeps a monster's Crywolf states [mo
     CHECK_FALSE(altar->Object.m_BuffMap.isBuff(eBuff_CrywolfAltarEnable));
 }
 
+// 0x07 for a stat-down debuff gives a monster its pair of lights, and taking the debuff removes them. Monsters get
+// these lights only from this packet. The shipped buff table says it is a debuff, which the packet's handler needs
+// before it draws anything.
+TEST_CASE("Monster setup: 0x07 gives a monster the stat-down lights and takes them away [monsters][creation]")
+{
+    using MonsterRecorder::CreationScope;
+    const Data::Buffs::BuffsLoadResult shipped =
+        Data::Buffs::LoadBuffsFile(std::filesystem::path(MU_TEST_DATA_DIR) / "Buffs" / "Buffs.json");
+    REQUIRE_FALSE(shipped.buffs.empty());
+    const BuffTableScope table(shipped.buffs, "en");
+    CreationScope scope(0);
+    MonsterRecorder::PrepareCreationSlot(CreationSlot::Clean);
+    CHARACTER* budge = scope.Create(MONSTER_BUDGE_DRAGON);
+    REQUIRE(budge != nullptr);
+    OBJECT* o = &budge->Object;
+    auto lights = [o]
+    {
+        int count = 0;
+        for (int i = 0; i < MAX_EFFECTS; ++i)
+        {
+            const OBJECT& effect = Effects[i];
+            if (effect.Live && effect.Owner == o && effect.SubType == 1 &&
+                (effect.Type == BITMAP_SHINY + 6 || effect.Type == BITMAP_PIN_LIGHT))
+                ++count;
+        }
+        return count;
+    };
+
+    CreationScope::SendBuffState(*budge, eDeBuff_AttackDown, true);
+    CHECK(lights() == 2);
+    // A debuff the monster shows already adds nothing: ReceiveSkillStatus doesn't register it again. This doesn't reach
+    // the check in StatDownDebuffLights::Create, which guards the in-place re-create instead.
+    CreationScope::SendBuffState(*budge, eDeBuff_AttackDown, true);
+    CHECK(lights() == 2);
+
+    CreationScope::SendBuffState(*budge, eDeBuff_AttackDown, false);
+    CHECK(lights() == 0);
+    Render::Effects::StatDownDebuffLights::Delete(o, eDeBuff_AttackDown); // none outlives the monster
+}
+
 // Molt's model file is missing: it is tried once a map, not at each spawn,
 // and the map change forgets it (Q-MN45c).
 TEST_CASE("Monster setup: a missing model file is tried once a map [monsters][creation]")
@@ -1032,6 +1076,55 @@ TEST_CASE("Monster setup: Respawn keeps the buffs the server gave (D55) [monster
     respawn({"poison"});
     respawn({});
     CHECK_FALSE(object.m_BuffMap.isBuff(eDeBuff_Poison));
+}
+
+// The Crywolf hero contract rule of 0x07 is the entries' crywolfContract: a
+// monster given it runs the rule too.
+TEST_CASE("Monster setup: a monster in the Crywolf hero contract loses its states to a buff sent again "
+          "[monsters][creation]")
+{
+    using MonsterRecorder::CreationScope;
+    CreationScope scope(0);
+    const MonsterEntryScope kept(MONSTER_BUDGE_DRAGON);
+    Data::Monsters::MonsterDefinition changed = kept.Original();
+    changed.setup.crywolfContract = true;
+    g_MonsterDatabase.Set(changed);
+    MonsterRecorder::PrepareCreationSlot(CreationSlot::Clean);
+    CHARACTER* budge = scope.Create(MONSTER_BUDGE_DRAGON);
+    REQUIRE(budge != nullptr);
+    g_CharacterRegisterBuff((&budge->Object), eBuff_CrywolfAltarEnable);
+    CreationScope::SendBuffState(*budge, eBuff_CrywolfAltarEnable, true);
+    CHECK_FALSE(budge->Object.m_BuffMap.isBuff(eBuff_CrywolfAltarEnable));
+}
+
+// The shipped entries with crywolfContract are those the old code named by
+// model: the five altars, MODEL_SMITH, MODEL_NPC_SERBIS, MODEL_MERCHANT_MAN,
+// MODEL_STORAGE and MODEL_NPC_BREEDER, on the entry and its map variants.
+TEST_CASE("Monster setup: the shipped crywolfContract entries are the old code's models [monsters][creation]")
+{
+    constexpr std::array<std::string_view, 10> OldModels{
+        "MODEL_CRYWOLF_ALTAR1", "MODEL_CRYWOLF_ALTAR2", "MODEL_CRYWOLF_ALTAR3", "MODEL_CRYWOLF_ALTAR4",
+        "MODEL_CRYWOLF_ALTAR5", "MODEL_SMITH",          "MODEL_NPC_SERBIS",     "MODEL_MERCHANT_MAN",
+        "MODEL_STORAGE",        "MODEL_NPC_BREEDER"};
+    const auto oldRule = [&](const std::string& model)
+    { return std::ranges::find(OldModels, model) != OldModels.end(); };
+    const std::vector<Data::Monsters::MonsterDefinition> monsters =
+        Data::Monsters::LoadMonstersFile(MonsterRecorder::ClientFolder() / "Data" / "Monsters" / "Monsters.json")
+            .monsters;
+    REQUIRE(monsters.size() > 500);
+    int contracts = 0;
+    for (const Data::Monsters::MonsterDefinition& monster : monsters)
+    {
+        INFO("monster " << monster.number);
+        const bool own = monster.setup.crywolfContract.value_or(false);
+        CHECK(own == oldRule(monster.model));
+        contracts += own ? 1 : 0;
+        for (const Data::Monsters::MonsterMapVariant& variant : monster.mapVariants)
+        {
+            CHECK(variant.setup.crywolfContract.value_or(own) == oldRule(variant.model.value_or(monster.model)));
+        }
+    }
+    CHECK(contracts == 13);
 }
 
 // Respawn makes a monster with a tile offset (Elpis) on the server's tile, as

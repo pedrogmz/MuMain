@@ -3,6 +3,7 @@
 //*****************************************************************************
 
 #include "stdafx.h"
+#include "Core/Platform/Quit.h"
 #include "UI/Windows/SysMenuWin.h"
 #include "I18N/All.h"
 
@@ -120,7 +121,7 @@ void CSysMenuWin::ExitGame()
         g_ConsoleDebug->Write(MCD_SEND, L"0xF1 [SendRequestLogOut] 0");
     }
 
-    ::PostMessage(g_hWnd, WM_CLOSE, 0, 0);
+    Core::Platform::RequestQuit();
 }
 
 void CSysMenuWin::SelectServer()

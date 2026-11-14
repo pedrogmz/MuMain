@@ -6,7 +6,9 @@
 #include "Core/Utilities/FrameProfiler.h"
 #include "Core/Utilities/TeardownStack.h"
 #include "Core/Input/SyntheticInput.h"
+#include "Core/Platform/ErrorDialog.h"
 #include "Core/Platform/GameWindow.h"
+#include "Core/Platform/Quit.h"
 #include "Core/Input/UiInputRouter.h"
 #include "App/Control/ControlServer.h"
 #include "App/Platform/ClientMain.h"
@@ -19,9 +21,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define WIN32_EXTRA_LEAN
 
-#ifdef _WIN32
-#include <dpapi.h>
-#endif
 #include <clocale>
 #include <cstring>
 #include <filesystem>
@@ -51,6 +50,7 @@
 #include "Network/Reconnect/ReconnectManager.h"
 #include "Network/IncomingPacketQueue.h"
 #include "Network/EndpointForLog.h"
+#include "Dotnet/ManagedSymbols.h"
 #include "Core/Time/FrameTimerScheduler.h"
 #include "Core/Utilities/FrameProfiler.h"
 #include "Core/Utilities/Benchmark/BenchRecorder.h"
@@ -58,6 +58,7 @@
 #include <emscripten.h>
 #endif
 #include <SDL3/SDL.h>
+#include "Core/Content/ContentStore.h"
 #include "Render/Models/ZzzBMD.h"
 #include "Engine/Object/ZzzInfomation.h"
 #include "Engine/Object/ZzzObject.h"
@@ -86,7 +87,6 @@
 #include "MUHelper/MuHelper.h"
 #include "Camera/CameraManager.h"
 
-#include "UI/Windows/CBTMessageBox.h"
 
 #include "GameLogic/Events/CSChaosCastle.h"
 #ifdef _WIN32
@@ -531,27 +531,13 @@ DWORD GetCheckSum(WORD wKey)
 {
     wKey = DecryptCheckSumKey(wKey);
 
-    wchar_t lpszFile[MAX_PATH];
-
-    wcscpy(lpszFile, L"data\\local\\Gameguard.csr");
-
-    HANDLE hFile =
-        CreateFile(lpszFile, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (INVALID_HANDLE_VALUE == hFile)
+    std::optional<std::string> file = Content::ReadFile(L"data\\local\\Gameguard.csr");
+    if (!file)
     {
         return (0);
     }
 
-    DWORD dwSize = GetFileSize(hFile, nullptr);
-    auto* pbyBuffer = new BYTE[dwSize];
-    DWORD dwNumber;
-    ReadFile(hFile, pbyBuffer, dwSize, &dwNumber, nullptr);
-    CloseHandle(hFile);
-
-    DWORD dwCheckSum = GenerateCheckSum(pbyBuffer, dwSize, wKey);
-    delete[] pbyBuffer;
-
-    return (dwCheckSum);
+    return GenerateCheckSum(reinterpret_cast<BYTE*>(file->data()), static_cast<DWORD>(file->size()), wKey);
 }
 
 BOOL GetFileVersion(wchar_t* lpszFileName, WORD* pwVersion)
@@ -676,10 +662,6 @@ void DestroyWindow()
     PtrReset(g_petProcess);
 
     g_ErrorReport.Write(L"Destroy");
-
-    HWND shWnd = FindWindow(nullptr, L"MuPlayer");
-    if (shWnd)
-        SendMessage(shWnd, WM_DESTROY, 0, 0);
 }
 void DestroySound()
 {
@@ -738,11 +720,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // WM_ACTIVATE is handled via SDL window focus events (issue #442).
     case WM_NPROTECT_EXIT_TWO:
         SocketClient->ToGameServer()->SendLogOutByCheatDetection(0);
-        // Inform the user, then close. A frame-ticked timer cannot fire while
-        // this modal dialog blocks the main loop, so close right after the
-        // dialog is dismissed instead of via a timer.
-        MessageBox(nullptr, I18N::Game::Error9AHackingToolHasBeen, L"Error", MB_OK);
-        PostMessage(g_hWnd, WM_CLOSE, 0, 0);
+        Core::Platform::ShowFatalError(L"Error", I18N::Game::Error9AHackingToolHasBeen);
         break;
     case WM_ERASEBKGND:
         return TRUE;
@@ -756,20 +734,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
         return 0;
         break;
-    case WM_DESTROY:
-    {
-        // Just request shutdown; the main loop exits on Destroy and the teardown
-        // (sound, GL, window) runs after it. SDL owns the window now, so the GL
-        // context and window must not be torn down from inside a message.
-        SaveOptionsBeforeClose();
-        Destroy = true;
-        if (SocketClient != nullptr)
-        {
-            SocketClient->Close();
-            g_bGameServerConnected = false;
-        }
-    }
-    break;
     case WM_SETCURSOR:
 #ifdef _EDITOR
         // When hovering UI (including Open Editor button), let Windows show cursor
@@ -941,6 +905,7 @@ bool ExceptionCallback(_EXCEPTION_POINTERS* pExceptionInfo)
     return true;
 }
 
+// -1 on a target that can't measure the process's CPU use.
 double CPU_AVG = 0.0;
 static void RenderProfiledFrame()
 {
@@ -969,7 +934,13 @@ void RecordCpuUsage()
 
     while (!Destroy)
     {
-        double currentUsage = CpuUsage::Instance()->GetUsage() * 100.0;
+        const std::optional<double> sample = CpuUsage::Instance()->GetUsage();
+        if (!sample)
+        {
+            CPU_AVG = -1.0;
+            return;
+        }
+        double currentUsage = *sample * 100.0;
 
         currentUsage = std::clamp(currentUsage, 0.0, 100.0);
 
@@ -1023,11 +994,11 @@ static bool SDLCALL Win32MessageHook(void* /*userdata*/, MSG* msg)
     if (msg->hwnd != nullptr && msg->hwnd != g_hWnd)
         return true;
 
-    // Only F10's zoom lock, Enter's legacy input flag and posted WM_DESTROY
-    // shutdown requests need this bridge. SDL dispatches everything else.
+    // Only F10's zoom lock and Enter's legacy input flag need this bridge. SDL
+    // dispatches everything else.
     const bool isZoomLockKey = msg->message == WM_SYSKEYDOWN && msg->wParam == VK_F10;
     const bool isEnterKey = msg->message == WM_CHAR && msg->wParam == VK_RETURN;
-    if (isZoomLockKey || isEnterKey || msg->message == WM_DESTROY)
+    if (isZoomLockKey || isEnterKey)
     {
         WndProc(msg->hwnd, msg->message, msg->wParam, msg->lParam);
     }
@@ -1633,6 +1604,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void MuWebSetWindowActive(int active)
 
 bool IterateClient()
 {
+    // A quit requested before SDL's events ran (during startup) arrives as the flag alone.
+    if (Core::Platform::QuitRequested() && !Destroy)
+    {
+        SaveOptionsBeforeClose();
+        Destroy = true;
+    }
+
     // Nothing runs, not even the packets or the timers; the events still arrive, so the window can close.
     if (FramesPaused())
     {
@@ -1750,51 +1728,47 @@ FontSizes CalculateFontSizes()
 }
 
 #ifdef _WIN32
-// Absolute path of a bundled font file (relative to ./fonts) next to the exe.
-// The curated names in kBundledFonts are ASCII, so the byte-wise widen is safe.
-std::wstring BundledFontFullPath(const char* relative)
-{
-    wchar_t exePath[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::wstring path(exePath);
-    path.resize(path.find_last_of(L"\\/") + 1); // keep the directory + separator
-    while (*relative)
-        path.push_back(static_cast<wchar_t>(static_cast<unsigned char>(*relative++)));
-    return path;
-}
+// The bundled faces added to GDI; it keeps its own copy of each file's bytes.
+std::vector<HANDLE> g_bundledFontFaces;
 #endif
+
+// Mirrors RegisterBundledFonts so the process leaves no private faces behind.
+void UnregisterBundledFonts()
+{
+#ifdef _WIN32
+    for (auto it = g_bundledFontFaces.rbegin(); it != g_bundledFontFaces.rend(); ++it)
+        RemoveFontMemResourceEx(*it);
+    g_bundledFontFaces.clear();
+#endif
+}
 
 // Privately register the TTFs bundled in ./fonts so GDI resolves their face
 // names even when they are not installed system-wide — parity with the
-// non-Windows GdiText shim, which reads ./fonts directly. FR_PRIVATE scopes the
-// faces to this process, leaving the system font list untouched. No-op off Windows,
+// non-Windows GdiText shim, which reads ./fonts directly. Memory fonts are
+// private to this process, leaving the system font list untouched. No-op off Windows,
 // where bundled fonts are resolved by GdiText. Shares the kBundledFonts table.
 bool RegisterBundledFonts()
 {
 #ifdef _WIN32
-    std::vector<std::wstring> registeredPaths;
-    const auto rollback = [&registeredPaths]()
+    const auto registerPath = [](const char* relativePath)
     {
-        for (auto it = registeredPaths.rbegin(); it != registeredPaths.rend(); ++it)
-            RemoveFontResourceExW(it->c_str(), FR_PRIVATE, nullptr);
-    };
-    const auto registerPath = [&registeredPaths, &rollback](const char* relativePath)
-    {
-        const std::wstring path = BundledFontFullPath(relativePath);
-        if (!std::filesystem::is_regular_file(path))
+        std::optional<std::string> bytes = Content::ReadFile(relativePath);
+        if (!bytes)
         {
-            mu::log::Get("render")->error("GDI -- bundled font missing path='{}'", WideToUtf8(path));
-            rollback();
+            mu::log::Get("render")->error("GDI -- bundled font missing path='{}'", relativePath);
+            UnregisterBundledFonts();
             return false;
         }
-        if (AddFontResourceExW(path.c_str(), FR_PRIVATE, nullptr) == 0)
+        DWORD faces = 0;
+        const HANDLE font = AddFontMemResourceEx(bytes->data(), static_cast<DWORD>(bytes->size()), nullptr, &faces);
+        if (font == nullptr)
         {
-            mu::log::Get("render")->error("GDI -- AddFontResourceExW failed path='{}' error={}", WideToUtf8(path),
+            mu::log::Get("render")->error("GDI -- AddFontMemResourceEx failed path='{}' error={}", relativePath,
                                           GetLastError());
-            rollback();
+            UnregisterBundledFonts();
             return false;
         }
-        registeredPaths.push_back(path);
+        g_bundledFontFaces.push_back(font);
         return true;
     };
 
@@ -1807,19 +1781,6 @@ bool RegisterBundledFonts()
         return false;
 #endif
     return true;
-}
-
-// Mirrors RegisterBundledFonts so the process leaves no private faces behind.
-void UnregisterBundledFonts()
-{
-#ifdef _WIN32
-    for (const auto& font : kBundledFonts)
-    {
-        RemoveFontResourceExW(BundledFontFullPath(font.regular).c_str(), FR_PRIVATE, nullptr);
-        RemoveFontResourceExW(BundledFontFullPath(font.bold).c_str(), FR_PRIVATE, nullptr);
-    }
-    RemoveFontResourceExW(BundledFontFullPath(kBundledFixedFont.regular).c_str(), FR_PRIVATE, nullptr);
-#endif
 }
 
 HFONT CreateFontForFamily(int size, int weight, std::string_view family)
@@ -1977,23 +1938,46 @@ static void WriteStartupDiagnostics(const wchar_t* executableVersion, const WORD
     g_ErrorReport.AddSeparator();
 }
 
-static void SetWorkingDirectoryToBasePath()
+// The client folder; empty when it can't be told.
+static std::filesystem::path ClientFolder()
 {
 #if defined(__APPLE__)
     // The working directory hasn't moved yet, so a relative start path still leads to the client here and is kept
     // absolute for every later caller (WinApiShims.h).
     if (const std::filesystem::path executable = Core::Platform::GetExecutablePath(); !executable.empty())
     {
-        std::error_code error;
-        std::filesystem::current_path(executable.parent_path(), error);
+        return executable.parent_path();
     }
 #else
     if (const char* basePath = SDL_GetBasePath(); basePath != nullptr)
     {
-        std::error_code error;
-        std::filesystem::current_path(basePath, error);
+        return std::filesystem::path(reinterpret_cast<const char8_t*>(basePath));
     }
 #endif
+    return {};
+}
+
+static void SetWorkingDirectoryToBasePath()
+{
+    if (const std::filesystem::path folder = ClientFolder(); !folder.empty())
+    {
+        std::error_code error;
+        std::filesystem::current_path(folder, error);
+    }
+}
+
+// The game's content is read from the client folder, named the same way on every platform (Core/Content). Returns
+// the line for the error report: where content is read from, or why the working directory is read instead.
+static std::string OpenContent()
+{
+    const std::string root = reinterpret_cast<const char*>(ClientFolder().u8string().c_str());
+    SDL_Storage* storage = SDL_OpenTitleStorage(root.empty() ? nullptr : root.c_str(), 0);
+    if (storage == nullptr)
+    {
+        return "cannot open " + root + " (" + SDL_GetError() + "), reading the working directory";
+    }
+    Content::Open(storage);
+    return root;
 }
 
 // The language the player reads: SetLocale falls back to en for a locale it doesn't know.
@@ -2072,8 +2056,12 @@ bool StartClient(char* szCmdLine)
         }
     }
 
+    const std::string contentRoot = OpenContent();
+    g_teardown.Push([] { Content::Close(); });
+
     WriteStartupDiagnostics(lpszExeVersion, wVersion);
-    InitializeDotNetBridge();
+    g_ErrorReport.Write(L"> Content: %hs\r\n", contentRoot.c_str());
+    InitializeDotNetBridge(DotNetBridge::TargetManagedSymbolSource());
 
     g_ErrorReport.Write(L"> To read config.ini.\r\n");
 
@@ -2171,7 +2159,7 @@ bool StartClient(char* szCmdLine)
         const std::wstring videoInitError = Utf8ToWide(SDL_GetError());
         g_ErrorReport.Write(L"> SDL video init failed. Requested driver: %ls. SDL error: %ls\r\n",
                             requestedDriver.c_str(), videoInitError.c_str());
-        MessageBox(nullptr, L"Windows aplication error!", L"Aplication Error", MB_ICONERROR);
+        Core::Platform::ErrorDialog::Show("Aplication Error", "Windows aplication error!", false);
         return false;
     }
     g_teardown.Push([] { SDL_Quit(); });
@@ -2203,7 +2191,7 @@ bool StartClient(char* szCmdLine)
     if (!g_sdlWindow)
     {
         g_ErrorReport.Write(L"> SDL_CreateWindow failed.\r\n");
-        MessageBox(nullptr, L"Windows aplication error!", L"Aplication Error", MB_ICONERROR);
+        Core::Platform::ErrorDialog::Show("Aplication Error", "Windows aplication error!", false);
         return false;
     }
     Core::Platform::SetGameWindow(g_sdlWindow);
@@ -2214,7 +2202,7 @@ bool StartClient(char* szCmdLine)
     AdoptActualWindowSize();
 
 #if defined(__linux__)
-    SDL_Surface* applicationIcon = SDL_LoadPNG(Core::Platform::GameWindowIconFile);
+    SDL_Surface* applicationIcon = SDL_LoadPNG_IO(Content::OpenIO(Core::Platform::GameWindowIconFile).release(), true);
     if (applicationIcon != nullptr)
     {
         SDL_SetWindowIcon(g_sdlWindow, applicationIcon);
@@ -2242,8 +2230,8 @@ bool StartClient(char* szCmdLine)
                                 static_cast<float>(initialFontSizes.fixed)))
     {
         g_ErrorReport.Write(L"SDL_gpu renderer init failed.\r\n");
-        MessageBox(nullptr, I18N::Game::InstallTheLatestGraphicsCardDriver, L"SDL_gpu Renderer Error.",
-                   MB_OK | MB_ICONEXCLAMATION);
+        Core::Platform::ErrorDialog::Show("SDL_gpu Renderer Error.",
+                                          mu_wchar_to_utf8(I18N::Game::InstallTheLatestGraphicsCardDriver), false);
         return false;
     }
 
@@ -2279,7 +2267,9 @@ bool StartClient(char* szCmdLine)
 
     g_ErrorReport.Write(L"> SDL_gpu init success.\r\n");
     g_ErrorReport.AddSeparator();
-    g_ErrorReport.WriteGpuInfo();
+    const auto& renderer = mu::GetRenderer();
+    g_ErrorReport.WriteGpuInfo(renderer.GetGPUDeviceName(), renderer.GetGPUDriverName(),
+                               renderer.GetGPUDriverVersion());
     g_ErrorReport.AddSeparator();
 
     // Must run after InitSDLGpuRenderer() -- RmlUiRuntime::Create() needs a live
@@ -2567,6 +2557,16 @@ bool StartClient(char* szCmdLine)
             g_cpuUsageRecorder.join();
         });
 #endif
+    // Pushed last so a quit leaves the server first, however it was asked for.
+    g_teardown.Push(
+        []
+        {
+            if (SocketClient != nullptr)
+            {
+                SocketClient->Close();
+                g_bGameServerConnected = false;
+            }
+        });
     return true;
 }
 

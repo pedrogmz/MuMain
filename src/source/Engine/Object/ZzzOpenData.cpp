@@ -1,4 +1,5 @@
 ﻿#include "stdafx.h"
+#include "Core/Platform/Quit.h"
 #include "Render/Models/ZzzBMD.h"
 #include "Core/Utilities/Random.h"
 #include "Engine/Object/ZzzInfomation.h"
@@ -52,7 +53,6 @@
 #include "Render/Items/ItemEffects.h"
 #include "Render/Items/LookDrawing.h"
 #include "Render/Items/ItemRenderStyles.h"
-#include "Core/Platform/ErrorDialog.h"
 #include "Core/Text/Utf8.h"
 #include "Network/Server/SocketSystem.h"
 #include "Render/Text/CUIRenderText.h"
@@ -60,63 +60,6 @@
 ///////////////////////////////////////////
 extern BOOL g_bUseChatListBox;
 ///////////////////////////////////////////
-
-bool Flip = false;
-
-void OpenModel(int Type, wchar_t* Dir, wchar_t* ModelFileName, ...)
-{
-    wchar_t ModelName[100];
-    wchar_t AnimationName[20][100];
-    wcscpy(ModelName, Dir);
-    wcscat(ModelName, ModelFileName);
-
-    va_list Marker;
-    va_start(Marker, ModelFileName);
-    int AnimationCount = 0;
-    while (1)
-    {
-        wchar_t* Temp = va_arg(Marker, wchar_t*);
-        if (Temp == nullptr || wcscmp(Temp, L"end") == 0)
-        {
-            break;
-        }
-        else
-        {
-            wcscpy(AnimationName[AnimationCount], Dir);
-            wcscat(AnimationName[AnimationCount], Temp);
-            AnimationCount++;
-        }
-    }
-    if (AnimationCount == 0)
-    {
-        OpenSMDModel(Type, ModelName, 1, Flip);
-        OpenSMDAnimation(Type, ModelName);
-    }
-    else
-    {
-        OpenSMDModel(Type, ModelName, AnimationCount, Flip);
-        for (int i = 0; i < AnimationCount; i++)
-        {
-            bool Walk = false;
-            if (i == MONSTER01_WALK || i == MONSTER01_RUN) Walk = true;
-            OpenSMDAnimation(Type, AnimationName[i], Walk);
-        }
-    }
-    va_end(Marker);
-
-    Flip = false;
-}
-
-void OpenModels(int Model, wchar_t* FileName, int i)
-{
-    wchar_t Name[64];
-    if (i < 10)
-        mu_swprintf(Name, L"%ls0%d.smd", FileName, i);
-    else
-        mu_swprintf(Name, L"%ls%d.smd", FileName, i);
-    OpenSMDModel(Model, Name);
-    OpenSMDAnimation(Model, Name);
-}
 
 void OpenPlayers()
 {
@@ -131,8 +74,7 @@ void OpenPlayers()
     if (Models[MODEL_PLAYER].NumMeshs > 0)
     {
         g_ErrorReport.Write(L"Player.bmd file error.\r\n");
-        MessageBox(g_hWnd, L"Player.bmd file error!!!", NULL, MB_OK);
-        SendMessage(g_hWnd, WM_DESTROY, 0, 0);
+        Core::Platform::ShowFatalError(L"Error", L"Player.bmd file error!!!");
     }
 
     const bool useS6 = GameConfig::GetInstance().GetUseS6PlayerModels();
@@ -365,8 +307,7 @@ static void StopOnDataError(const char* title, const std::string& errorMessage)
 {
     const std::wstring message = Core::Text::FromUtf8(errorMessage);
     g_ErrorReport.Write(L"%ls\r\n", message.c_str());
-    Core::Platform::ErrorDialog::Show(title, errorMessage, false);
-    SendMessage(g_hWnd, WM_DESTROY, 0, 0);
+    Core::Platform::ShowFatalError(title, errorMessage);
 }
 
 static void StopOnItemDataError(const std::string& errorMessage)

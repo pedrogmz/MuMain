@@ -16,11 +16,8 @@
 #include <cctype>
 #include <optional>
 
+#include "Core/Content/ContentStore.h"
 #include "Core/Text/Utf8Path.h"
-
-#ifndef _WIN32
-#include "Core/Platform/PathResolve.h"
-#endif
 
 namespace Data::Items
 {
@@ -45,12 +42,12 @@ bool IsFileNamed(std::string_view fileName, std::string_view expected)
 std::vector<std::filesystem::path> FindJsonFiles(const std::filesystem::path& directory)
 {
     std::vector<std::filesystem::path> files;
-    std::error_code error;
-    for (const auto& entry : std::filesystem::directory_iterator(directory, error))
+    for (const Content::Entry& entry : Content::ListFolder(directory))
     {
-        if (entry.is_regular_file() && entry.path().extension() == JsonExtension)
+        const std::filesystem::path file = directory / Core::Text::PathFromUtf8(entry.name);
+        if (!entry.folder && file.extension() == JsonExtension)
         {
-            files.push_back(entry.path());
+            files.push_back(file);
         }
     }
     std::sort(files.begin(), files.end());
@@ -440,8 +437,8 @@ std::filesystem::path GetItemNameCasesFile()
 ItemNameCasesLoadResult LoadItemNameCasesFile(const std::filesystem::path& file)
 {
     ItemNameCasesLoadResult result;
-    std::error_code error;
-    if (!std::filesystem::exists(file, error))
+    if (const Content::Found found = Content::Probe(file);
+        found == Content::Found::Nothing || found == Content::Found::Unknown)
     {
         return result;
     }
@@ -594,14 +591,7 @@ namespace
 // Whether a model file of the data is in the client folder.
 bool ModelFileExists(const std::string& file)
 {
-#ifdef _WIN32
-    const std::filesystem::path path = Core::Text::PathFromUtf8(file);
-#else
-    // The data does not always spell the files in the case they have on disk.
-    const std::filesystem::path path = MuResolvePath(file.c_str());
-#endif
-    std::error_code ignored;
-    return std::filesystem::is_regular_file(path, ignored);
+    return Content::Probe(Core::Text::PathFromUtf8(file)) == Content::Found::File;
 }
 } // namespace
 

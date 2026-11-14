@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Core/Platform/Quit.h"
 #include "Core/Utilities/Random.h"
 #include "App/Control/ControlTaps.h"
 #include "Audio/SoundPlaces.h"
@@ -36,6 +37,7 @@
 #include "Engine/Pathing/ZzzPath.h"
 #include "Engine/AI/ZzzAI.h"
 #include "Render/Textures/ZzzTexture.h"
+#include "Render/Effects/StatDownDebuffLights.h"
 #include "Render/Effects/ZzzEffect.h"
 #include "Render/Textures/ZzzOpenglUtil.h"
 #include "Engine/Object/ZzzOpenData.h"
@@ -52,6 +54,8 @@
 #include "GameLogic/Events/MatchEvent.h"
 #include "GameLogic/Monsters/MonsterAttackPlay.h"
 #include "GameLogic/Monsters/MonsterFacing.h"
+#include "Data/GameData/MonsterData/MonsterDatabase.h"
+#include "Data/GameData/MonsterData/MonsterSetup.h"
 #include "GameLogic/Monsters/MonsterSetupApply.h"
 #include "World/GameMaps/MonsterSpawnWorld.h"
 #include "Engine/AI/GOBoid.h"
@@ -398,53 +402,79 @@ bool IsGameServerPort(unsigned short Port)
     return Port > 0xADFF || Port < 0xAD00;
 }
 
-BOOL CreateSocket(const wchar_t* IpAddr, unsigned short Port)
+namespace
 {
-    BOOL bResult = TRUE;
-    g_ConsoleDebug->Write(MCD_NORMAL, L"[Connect to Server] ip address = %ls, port = %d", IpAddr, Port);
+// Where SocketClient connects to: for the message when it can't, and for the auto-reconnect once a game server
+// greets it.
+struct ConnectAttempt
+{
+    std::wstring host;
+    unsigned short port = 0;
+    bool serverPick = false; // a game server the connect server sent the client to
+};
+ConnectAttempt s_connectAttempt;
 
-    const bool isEncrypted = IsGameServerPort(Port);
-    SocketClient = new Connection(MU_C16(IpAddr), Port, isEncrypted, &HandleIncomingPacket);
-    if (!SocketClient->IsConnected())
+void ReportConnectFailure(const ConnectAttempt& attempt)
+{
+    wchar_t connectError[256];
+    mu_swprintf_s(connectError, L"Cannot connect to %ls:%d. Server may be offline.", attempt.host.c_str(),
+                  attempt.port);
+    // The dialog names the address; the log, which players post, follows Network::DescribeEndpointForLog.
+    g_ErrorReport.Write(L"NET: Cannot connect to %hs. Server may be offline.\r\n",
+                        Network::DescribeEndpointForLog(mu_wchar_to_utf8(attempt.host.c_str()), attempt.port).c_str());
+    g_ErrorReport.WriteCurrentTime();
+
+    // While auto-reconnecting we probe the server repeatedly; the reconnect
+    // dialog already shows the status, so don't stack "server lost" popups.
+    // On the login screen LoginSceneReconnect says it with its Reconnect / Exit message.
+    if (!ReconnectManager::Instance().IsActive() && SceneFlag != LOG_IN_SCENE)
     {
-        bResult = FALSE;
-        wchar_t connectError[256];
-        mu_swprintf_s(connectError, L"Cannot connect to %ls:%d. Server may be offline.", IpAddr, Port);
-        // The dialog names the address; the log, which players post, follows Network::DescribeEndpointForLog.
-        g_ErrorReport.Write(L"NET: Cannot connect to %hs. Server may be offline.\r\n",
-                            Network::DescribeEndpointForLog(mu_wchar_to_utf8(IpAddr), Port).c_str());
-        g_ErrorReport.WriteCurrentTime();
-        delete SocketClient;
-        SocketClient = nullptr;
-
-        // While auto-reconnecting we probe the server repeatedly; the reconnect
-        // dialog already shows the status, so don't stack "server lost" popups.
-        // On the login screen LoginSceneReconnect says it with its Reconnect / Exit message.
-        if (!ReconnectManager::Instance().IsActive() && SceneFlag != LOG_IN_SCENE)
+        static bool connectErrorDisplayed = false;
+        if (!connectErrorDisplayed)
         {
-            static bool connectErrorDisplayed = false;
-            if (!connectErrorDisplayed)
-            {
-                connectErrorDisplayed = true;
-                MessageBoxW(nullptr, connectError, L"Connection Error", MB_ICONERROR | MB_OK);
-            }
+            connectErrorDisplayed = true;
+            Core::Platform::ShowError("Connection Error", mu_wchar_to_utf8(connectError));
         }
     }
-    else if (isEncrypted)
+}
+} // namespace
+
+BOOL CreateSocket(const wchar_t* IpAddr, unsigned short Port)
+{
+    g_ConsoleDebug->Write(MCD_NORMAL, L"[Connect to Server] ip address = %ls, port = %d", IpAddr, Port);
+
+    s_connectAttempt = ConnectAttempt{IpAddr, Port};
+    SocketClient = new Connection(MU_C16(IpAddr), Port, IsGameServerPort(Port), &HandleIncomingPacket);
+    // Only a connect that couldn't even start fails here; one the server refuses closes later (FinishFailedConnect).
+    if (SocketClient->FailedToOpen())
     {
-        // Remember the address we actually connected to so auto-reconnect can
-        // probe it directly. Only cache game-server endpoints: a reconnect
-        // re-runs the login/character/join sequence, which the connect server
-        // can't answer. The connect server is the only unencrypted endpoint
-        // (see the port heuristic above), so caching when isEncrypted captures
-        // both the redirected game server (ReceiveServerConnect), a map-server
-        // change, and a direct game-server connection (where ReceiveServerConnect
-        // never runs), while skipping the connect server that would otherwise
-        // poison the cache and break reconnection (issue #68).
-        ReconnectManager::Instance().CacheServer(IpAddr, Port);
+        ReportConnectFailure(s_connectAttempt);
+        delete SocketClient;
+        SocketClient = nullptr;
+        return FALSE;
     }
 
-    return bResult;
+    return TRUE;
+}
+
+std::unique_ptr<Connection> OpenConnectionForLater(const wchar_t* IpAddr, unsigned short Port)
+{
+    return std::make_unique<Connection>(MU_C16(IpAddr), Port, IsGameServerPort(Port), &HandleIncomingPacket,
+                                        /*startReceiving=*/false);
+}
+
+bool FinishFailedConnect()
+{
+    ReportConnectFailure(s_connectAttempt);
+    DeleteSocket();
+    if (s_connectAttempt.serverPick && SceneFlag == LOG_IN_SCENE)
+    {
+        // The connect server still lists a game server that is down.
+        LoginSceneReconnect::Instance().OnServerUnreachable(LoginServer::Game);
+        return true;
+    }
+
+    return false;
 }
 
 void DeleteSocket()
@@ -460,7 +490,7 @@ wchar_t LogInID[MAX_USERNAME_SIZE + 1] = {
     0,
 };
 
-BOOL ConnectForLogin(const wchar_t* IpAddr, unsigned short Port)
+BOOL ConnectForLogin(const wchar_t* IpAddr, unsigned short Port, std::unique_ptr<Connection> opened)
 {
     DeleteSocket();
     LogIn = 0;
@@ -469,7 +499,13 @@ BOOL ConnectForLogin(const wchar_t* IpAddr, unsigned short Port)
     // Game server packets (CheckHack's ping, the logout on quit) go out only while a
     // game server is connected; the connect server doesn't know them.
     g_bGameServerConnected = FALSE;
-    if (!CreateSocket(IpAddr, Port))
+    if (opened)
+    {
+        s_connectAttempt = ConnectAttempt{IpAddr, Port};
+        SocketClient = opened.release();
+        SocketClient->StartReceiving();
+    }
+    else if (!CreateSocket(IpAddr, Port))
     {
         return FALSE;
     }
@@ -593,6 +629,7 @@ void ReceiveServerConnect(const BYTE* ReceiveBuffer)
         LoginSceneReconnect::Instance().OnServerUnreachable(LoginServer::Game);
         return;
     }
+    s_connectAttempt.serverPick = true;
 
     g_bGameServerConnected = TRUE;
 
@@ -611,6 +648,14 @@ void ReceiveJoinServer(const BYTE* ReceiveBuffer)
 {
     auto Data2 = (LPPRECEIVE_JOIN_SERVER)ReceiveBuffer;
     mu::log::Get("network")->info("NET: Login response result=0x{:02X}", Data2->Result);
+
+    // A game server answered, so auto-reconnect can come back to it. Only game servers: a reconnect re-runs the
+    // login/character/join sequence, which the connect server can't answer. Cached on its greeting,
+    // not when connecting, so a server that couldn't be reached never replaces the last good one.
+    if (IsGameServerPort(s_connectAttempt.port))
+    {
+        ReconnectManager::Instance().CacheServer(s_connectAttempt.host.c_str(), s_connectAttempt.port);
+    }
 
     // A login may follow: the server let the client in, and the client is new enough.
     bool readyForLogin = false;
@@ -1068,7 +1113,7 @@ BOOL ReceiveLogOut(const BYTE* ReceiveBuffer, BOOL bEncrypted)
         memset(GuildMark[MARK_EDIT].Mark, 0, sizeof(GuildMark[MARK_EDIT].Mark));
         memset(GuildMark[MARK_EDIT].GuildName, 0, sizeof(GuildMark[MARK_EDIT].GuildName));
         SelectMarkColor = 0;
-        PostMessage(g_hWnd, WM_DESTROY, 0, 0);
+        Core::Platform::RequestQuit();
         break;
     case 1:
         App::Control::Events::RecordDisconnected("the session went back to the character list");
@@ -3928,9 +3973,13 @@ void ReceiveSkillStatus(const BYTE* ReceiveBuffer)
         {
             // Shown already (a monster's spawn buff): the server's now too.
             GameLogic::Monsters::Setup::NoteServerBuff(*o, static_cast<int>(bufftype), true);
-            if ((o->Type >= MODEL_CRYWOLF_ALTAR1 && o->Type <= MODEL_CRYWOLF_ALTAR5) || o->Type == MODEL_SMITH ||
-                o->Type == MODEL_NPC_SERBIS || o->Type == MODEL_MERCHANT_MAN || o->Type == MODEL_STORAGE ||
-                o->Type == MODEL_NPC_BREEDER)
+            // The altars and the Crywolf NPCs take part in the hero contract
+            // (their entries' crywolfContract).
+            const Data::Monsters::MonsterDefinition* entry = g_MonsterDatabase.Find(c->MonsterIndex);
+            if (entry != nullptr && GameLogic::Monsters::Setup::SetupWithField(
+                                        *entry, [](const Data::Monsters::MonsterSetup& setup)
+                                        { return setup.crywolfContract.has_value(); }, World::Monsters::GetSpawnWorld())
+                                        .crywolfContract.value_or(false))
             {
                 if (g_isCharacterBuff(o, eBuff_CrywolfHeroContracted))
                 {
@@ -14868,6 +14917,12 @@ static void ProcessPacket(const BYTE* ReceiveBuffer, int32_t Size)
 
 void ProcessPacketCallback(const PacketInfo* Packet)
 {
+    if (Packet->Event != Network::ConnectionEvent::None)
+    {
+        Connection::ApplyQueuedEvent(Packet->ConnectionHandle, Packet->Event);
+        return;
+    }
+
     // By the id, not the live handle: what a server sent right before it closed the
     // connection (e.g. why it closed it) still counts.
     if (SocketClient == nullptr || Packet->ConnectionHandle != SocketClient->GetId())
@@ -15487,22 +15542,9 @@ void InsertBuffPhysicalEffect(eBuffState buff, OBJECT* o)
     }
     break;
     case eDeBuff_AttackDown:
-    {
-        vec3_t vLight;
-        Vector(1.4f, 0.2f, 0.2f, vLight);
-        CreateEffect(BITMAP_SHINY + 6, o->Position, o->Angle, vLight, 1, o, -1, 0, 0, 0, 0.5f);
-        CreateEffect(BITMAP_PIN_LIGHT, o->Position, o->Angle, vLight, 1, o, -1, 0, 0, 0, 1.f);
-    }
-    break;
-
     case eDeBuff_DefenseDown:
-    {
-        vec3_t vLight;
-        Vector(0.25f, 1.0f, 0.7f, vLight);
-        CreateEffect(BITMAP_SHINY + 6, o->Position, o->Angle, vLight, 2, o, -1, 0, 0, 0, 0.5f);
-        CreateEffect(BITMAP_PIN_LIGHT, o->Position, o->Angle, vLight, 2, o, -1, 0, 0, 0, 1.f);
-    }
-    break;
+        Render::Effects::StatDownDebuffLights::Create(o, buff);
+        break;
     case eBuff_Berserker:
     {
         vec3_t vLight[2];
@@ -15702,13 +15744,8 @@ void ClearBuffPhysicalEffect(eBuffState buff, OBJECT* o)
     break;
 
     case eDeBuff_AttackDown:
-        DeleteEffect(BITMAP_SHINY + 6, o, 1);
-        DeleteEffect(BITMAP_PIN_LIGHT, o, 1);
-        break;
-
     case eDeBuff_DefenseDown:
-        DeleteEffect(BITMAP_SHINY + 6, o, 2);
-        DeleteEffect(BITMAP_PIN_LIGHT, o, 2);
+        Render::Effects::StatDownDebuffLights::Delete(o, buff);
         break;
     case eBuff_Berserker:
     {

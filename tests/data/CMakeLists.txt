@@ -28,7 +28,8 @@ mu_add_test(
         MuClient
 )
 
-# The light mood of the world maps (Data/Maps/LightMood.json).
+# The old light mood file of the world maps (Data/Maps/LightMood.json), read to upgrade a format 1
+# Look.json; look_v1 holds the last shipped pair.
 mu_add_test(
     NAME light_mood_data_tests
     SOURCES
@@ -37,7 +38,7 @@ mu_add_test(
         MuClient
 )
 target_compile_definitions(light_mood_data_tests PRIVATE
-    MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
+    MU_TEST_LOOK_V1_DIR="${CMAKE_CURRENT_SOURCE_DIR}/look_v1"
 )
 
 # The buffs (Data/Buffs/Buffs.json, buffs design): reader, writer, checks, the
@@ -179,18 +180,21 @@ target_compile_definitions(monster_data_tests PRIVATE
 # GCC 13 reports a -Wstringop-overflow false positive in it with the precompiled header.
 mu_allow_gcc13_stringop_overflow(monster_data_tests test_monster_npc_name_files.cpp)
 
-# The look profile of the Enhanced rendering features (Data/Render/Look.json) and the player's own
-# tuning of it ([EnhancedTuning] of config.ini).
+# The look profile of the Enhanced rendering features (Data/Render/Look.json), its edit operations
+# and the player's own tuning of it ([EnhancedTuning] of config.ini). look_v1 holds the last shipped
+# pair of format 1 files, which the shipped file must match on every map.
 mu_add_test(
     NAME look_profile_data_tests
     SOURCES
         test_look_profile_json.cpp
+        test_look_profile_edits.cpp
         test_personal_tuning.cpp
     LINK_LIBS
         MuClient
 )
 target_compile_definitions(look_profile_data_tests PRIVATE
     MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
+    MU_TEST_LOOK_V1_DIR="${CMAKE_CURRENT_SOURCE_DIR}/look_v1"
 )
 
 # Reads the item and item model files shipped in src/bin/Data through the real
@@ -228,7 +232,7 @@ mu_add_test(
         # Item Tooltip's tooltip row reads the line colors of the themes' tooltip documents with RmlUi.
         mu_test_rml_layout_fixture
         # The test's version 14 model is encrypted with Crypto++'s ciphers.
-        MuCryptopp
+        MuDep::Cryptopp
 )
 target_compile_definitions(test_item_database_files PRIVATE
     MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
@@ -353,3 +357,18 @@ target_compile_definitions(render_style_tests PRIVATE
     MU_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/bin/Data"
     MU_RENDER_STYLE_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/baseline/RenderStyleDraws.txt"
 )
+
+# Each case of the data tests once more, with the shipped client data read from a storage of the test's own and the
+# working directory elsewhere (ClientDataScope), so a loader that goes around the content layer (Core/Content) fails
+# here. The extra argument keeps this discovery's files apart from the first one's.
+foreach(data_test IN ITEMS monster_data_tests test_item_database_files)
+    doctest_discover_tests(${data_test}
+        TEST_PREFIX "content storage: "
+        EXTRA_ARGS --no-version=true
+        PROPERTIES
+            ENVIRONMENT MU_TEST_CONTENT=storage
+            TIMEOUT ${MU_TEST_CASE_TIMEOUT_SECONDS}
+            RESOURCE_LOCK ${data_test}
+            FAIL_REGULAR_EXPRESSION "${MU_TEST_RAN_NO_CASE}"
+            SKIP_REGULAR_EXPRESSION "${MU_TEST_SKIPPED}")
+endforeach()

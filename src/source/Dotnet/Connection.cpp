@@ -7,10 +7,12 @@
 //   "Login failed. Check credentials."
 
 #include "stdafx.h"
+#include "Core/Platform/Quit.h"
 
 #include "Connection.h"
 #include "DotNetMessageFormat.h"
 #include "HandleRegistry.h"
+#include "Network/IncomingPacketQueue.h"
 #include "Core/Utilities/Log/MuLogger.h"
 #include "Network/EndpointForLog.h"
 
@@ -20,20 +22,6 @@
 #include "PacketFunctions_ChatServer.h"
 #include "PacketFunctions_ConnectServer.h"
 #include "PacketFunctions_ClientToServer.h"
-
-mu::platform::LibraryHandle munique_client_library_handle = nullptr;
-
-void LoadManagedLibrary()
-{
-#ifndef __EMSCRIPTEN__
-    // The browser build has no managed library: Connection talks to the server over a WebSocket bridge.
-    static bool attempted = false;
-    if (attempted)
-        return;
-    attempted = true;
-    munique_client_library_handle = mu::platform::Load(ManagedLibraryPath().c_str());
-#endif
-}
 
 namespace
 {
@@ -76,30 +64,55 @@ using GetManagedLibraryVersion = const char*(CORECLR_DELEGATE_CALLTYPE*)();
 
 // In a release download the library's commit is the client's, so a different one means a library from another
 // download. (A local build rebuilds the library only when its sources change, so there it can be older.)
-// Looked up with FindSymbol, not LoadManagedSymbol: a library from before this function is no error worth a dialog
-// or an error line in the log.
+// An optional export: a library from before this function is no error worth a dialog or an error line in the log.
 void WriteLibraryVersion()
 {
-    const auto getLibraryVersion = reinterpret_cast<GetManagedLibraryVersion>(
-        mu::platform::FindSymbol(munique_client_library_handle, "ConnectionManager_GetLibraryVersion"));
+    const auto getLibraryVersion = LoadManagedSymbol<GetManagedLibraryVersion>("ConnectionManager_GetLibraryVersion");
     const char* version = getLibraryVersion != nullptr ? getLibraryVersion() : nullptr;
     g_ErrorReport.Write(L"ClientLibrary \t\t: %hs\r\n",
                         version != nullptr ? version : "version unknown (older library)");
 }
 
+// The first few missing exports, for the dialog; the log has them all.
+std::string NameMissingExports(const std::vector<std::string>& missing)
+{
+    constexpr std::size_t shown = 5;
+    std::string names;
+    for (std::size_t i = 0; i < missing.size() && i < shown; ++i)
+    {
+        names += (i == 0 ? "" : ", ") + missing[i];
+    }
+    if (missing.size() > shown)
+    {
+        names += " and " + std::to_string(missing.size() - shown) + " more";
+    }
+    return names;
+}
+
 } // anonymous namespace
 
-void InitializeDotNetBridge()
+void InitializeDotNetBridge(const DotNetBridge::ManagedSymbolSource& source)
 {
-#ifdef __EMSCRIPTEN__
-    mu::log::Get("dotnet")->info("NET: InitializeDotNetBridge -- WASM WebSocket bridge active");
-#else
-    LoadManagedLibrary();
-    if (!munique_client_library_handle)
+    auto& symbols = DotNetBridge::ProcessManagedSymbols();
+    if (symbols.State() != DotNetBridge::ManagedSymbolsState::NotResolved)
     {
+        return;
+    }
+
+    switch (symbols.Resolve(source, DotNetBridge::ManagedExports()))
+    {
+    case DotNetBridge::ManagedSymbolsState::SourceMissing:
         mu::log::Get("dotnet")->error("NET: InitializeDotNetBridge -- library not loaded, skipping");
         g_ErrorReport.Write(L"ClientLibrary \t\t: not loaded\r\n");
         return;
+    case DotNetBridge::ManagedSymbolsState::ExportsMissing:
+        g_ErrorReport.Write(L"ClientLibrary \t\t: does not match this client, %d exports missing\r\n",
+                            static_cast<int>(symbols.MissingExports().size()));
+        DotNetBridge::ReportDotNetError(NameMissingExports(symbols.MissingExports()).c_str(),
+                                        DotNetBridge::DotNetErrorKind::SymbolNotFound);
+        return;
+    default:
+        break;
     }
 
     WriteLibraryVersion();
@@ -109,7 +122,6 @@ void InitializeDotNetBridge()
     {
         setManagedLogCallback(&WriteManagedLog);
     }
-#endif
 }
 
 namespace
@@ -148,7 +160,9 @@ void ReportDotNetError(const char* detail, DotNetErrorKind kind)
     // Determine platform name for AC-1 message (compile-time, impl file only — acceptable
     // per Dev Notes §Key Design Decisions: diagnostic string in implementation file).
     const char* platformName =
-#if defined(__linux__)
+#if defined(__EMSCRIPTEN__)
+        "Browser";
+#elif defined(__linux__)
         "Linux";
 #elif defined(__APPLE__)
         "macOS";
@@ -160,7 +174,7 @@ void ReportDotNetError(const char* detail, DotNetErrorKind kind)
     if (kind == DotNetErrorKind::LibraryNotFound)
     {
         // AC-1: Library not found — include resolved path and platform
-        msg = FormatLibraryNotFoundMessage(ManagedLibraryPath(), platformName);
+        msg = FormatLibraryNotFoundMessage(ProcessManagedSymbols().Description(), platformName);
     }
     else
     {
@@ -171,199 +185,24 @@ void ReportDotNetError(const char* detail, DotNetErrorKind kind)
     // Write to MuError.log (persistent diagnostic — spdlog)
     mu::log::Get("dotnet")->error("NET: {}", msg);
 
-    // Show user-visible dialog via MessageBoxW shim → SDL_ShowSimpleMessageBox (PlatformCompat.h)
-    // ASCII-safe conversion: diagnostic messages contain only ASCII characters
-    std::wstring wideMsg(msg.begin(), msg.end());
-    MessageBoxW(nullptr, wideMsg.c_str(), L"Network Error", MB_ICONERROR | MB_OK);
-}
-
-bool IsManagedLibraryAvailable()
-{
-#ifdef __EMSCRIPTEN__
-    return true;
-#else
-    if (munique_client_library_handle)
-    {
-        return true;
-    }
-
-    // AC-1: ReportDotNetError names the library path and platform
-    ReportDotNetError(nullptr, DotNetErrorKind::LibraryNotFound);
-    return false;
-#endif
+    Core::Platform::ShowError("Network Error", msg);
 }
 } // namespace DotNetBridge
 
 namespace
 {
 using onPacketReceived = void(int32_t, int32_t, BYTE*);
-using onDisconnected = void(int32_t);
+using onHandle = void(int32_t);
 
-typedef int32_t(CORECLR_DELEGATE_CALLTYPE* Connect)(const char16_t*, int32_t, BYTE, onPacketReceived, onDisconnected);
+typedef int32_t(CORECLR_DELEGATE_CALLTYPE* BeginConnect)(const char16_t*, int32_t, BYTE, onPacketReceived, onHandle,
+                                                         onHandle);
 typedef void(CORECLR_DELEGATE_CALLTYPE* Disconnect)(int32_t);
 typedef void(CORECLR_DELEGATE_CALLTYPE* BeginReceive)(int32_t);
 typedef void(CORECLR_DELEGATE_CALLTYPE* Send)(int32_t, const BYTE*, int32_t);
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten/websocket.h>
-
-namespace
+BeginConnect GetBeginConnect()
 {
-struct WasmConnectionState
-{
-    int32_t handle = 0;
-    EMSCRIPTEN_WEBSOCKET_T ws = 0;
-    bool isConnected = false;
-    onPacketReceived* packetCallback = nullptr;
-    onDisconnected* disconnectCallback = nullptr;
-};
-
-std::map<int32_t, WasmConnectionState> g_wasmConnections;
-int32_t g_nextWasmHandle = 1;
-
-EM_BOOL OnWsOpen(int eventType, const EmscriptenWebSocketOpenEvent* websocketEvent, void* userData)
-{
-    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
-    mu::log::Get("dotnet")->info("NET [WASM]: WebSocket opened, handle={}", handle);
-    auto it = g_wasmConnections.find(handle);
-    if (it != g_wasmConnections.end())
-    {
-        it->second.isConnected = true;
-    }
-    return EM_TRUE;
-}
-
-EM_BOOL OnWsClose(int eventType, const EmscriptenWebSocketCloseEvent* websocketEvent, void* userData)
-{
-    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
-    mu::log::Get("dotnet")->info("NET [WASM]: WebSocket closed, handle={}, code={}, reason={}",
-                                 handle, websocketEvent->code, websocketEvent->reason);
-    auto it = g_wasmConnections.find(handle);
-    if (it != g_wasmConnections.end())
-    {
-        it->second.isConnected = false;
-        if (it->second.disconnectCallback)
-        {
-            it->second.disconnectCallback(handle);
-        }
-        g_wasmConnections.erase(it);
-    }
-    return EM_TRUE;
-}
-
-EM_BOOL OnWsError(int eventType, const EmscriptenWebSocketErrorEvent* websocketEvent, void* userData)
-{
-    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
-    mu::log::Get("dotnet")->error("NET [WASM]: WebSocket error on handle={}", handle);
-    return EM_TRUE;
-}
-
-EM_BOOL OnWsMessage(int eventType, const EmscriptenWebSocketMessageEvent* websocketEvent, void* userData)
-{
-    const int32_t handle = static_cast<int32_t>(reinterpret_cast<intptr_t>(userData));
-    if (!websocketEvent->isText && websocketEvent->numBytes > 0)
-    {
-        auto it = g_wasmConnections.find(handle);
-        if (it != g_wasmConnections.end() && it->second.packetCallback)
-        {
-            it->second.packetCallback(handle, websocketEvent->numBytes, const_cast<BYTE*>(websocketEvent->data));
-        }
-    }
-    return EM_TRUE;
-}
-
-int32_t CORECLR_DELEGATE_CALLTYPE Wasm_Connect(const char16_t* host, int32_t port, BYTE isEncrypted,
-                                              onPacketReceived onReceived, onDisconnected onDisc)
-{
-    if (!emscripten_websocket_is_supported())
-    {
-        mu::log::Get("dotnet")->error("NET [WASM]: WebSockets not supported in browser!");
-        return -1;
-    }
-
-    const int32_t handle = g_nextWasmHandle++;
-
-    std::string hostStr;
-    if (host)
-    {
-        for (const char16_t* p = host; *p; ++p)
-        {
-            hostStr += static_cast<char>(*p);
-        }
-    }
-    if (hostStr.empty() || hostStr == "localhost")
-    {
-        hostStr = "127.0.0.1";
-    }
-
-    // openmu-browser-stack proxy is on port 7100
-    std::string wsUrl = "ws://" + hostStr + ":7100";
-
-    EmscriptenWebSocketCreateAttributes wsAttrs;
-    emscripten_websocket_init_create_attributes(&wsAttrs);
-    wsAttrs.url = wsUrl.c_str();
-
-    mu::log::Get("dotnet")->info("NET [WASM]: Connecting WebSocket to {} (handle={}, targetPort={})",
-                                 wsUrl, handle, port);
-
-    EMSCRIPTEN_WEBSOCKET_T ws = emscripten_websocket_new(&wsAttrs);
-    if (ws <= 0)
-    {
-        mu::log::Get("dotnet")->error("NET [WASM]: Failed to create WebSocket for {}", wsUrl);
-        return -1;
-    }
-
-    void* userData = reinterpret_cast<void*>(static_cast<intptr_t>(handle));
-    emscripten_websocket_set_onopen_callback(ws, userData, OnWsOpen);
-    emscripten_websocket_set_onclose_callback(ws, userData, OnWsClose);
-    emscripten_websocket_set_onerror_callback(ws, userData, OnWsError);
-    emscripten_websocket_set_onmessage_callback(ws, userData, OnWsMessage);
-
-    WasmConnectionState state;
-    state.handle = handle;
-    state.ws = ws;
-    state.isConnected = true;
-    state.packetCallback = onReceived;
-    state.disconnectCallback = onDisc;
-
-    g_wasmConnections[handle] = state;
-    return handle;
-}
-
-void CORECLR_DELEGATE_CALLTYPE Wasm_Send(int32_t handle, const BYTE* data, int32_t size)
-{
-    auto it = g_wasmConnections.find(handle);
-    if (it != g_wasmConnections.end() && it->second.ws > 0)
-    {
-        emscripten_websocket_send_binary(it->second.ws, const_cast<void*>(static_cast<const void*>(data)), size);
-    }
-}
-
-void CORECLR_DELEGATE_CALLTYPE Wasm_Disconnect(int32_t handle)
-{
-    auto it = g_wasmConnections.find(handle);
-    if (it != g_wasmConnections.end() && it->second.ws > 0)
-    {
-        emscripten_websocket_close(it->second.ws, 1000, "Normal closure");
-        it->second.ws = 0;
-        it->second.isConnected = false;
-        g_wasmConnections.erase(it);
-    }
-}
-
-void CORECLR_DELEGATE_CALLTYPE Wasm_BeginReceive(int32_t handle)
-{
-}
-} // namespace
-
-Connect GetConnect() { return &Wasm_Connect; }
-Disconnect GetDisconnect() { return &Wasm_Disconnect; }
-BeginReceive GetBeginReceive() { return &Wasm_BeginReceive; }
-Send GetSend() { return &Wasm_Send; }
-#else
-Connect GetConnect()
-{
-    static const auto function = LoadManagedSymbol<Connect>("ConnectionManager_Connect");
+    static const auto function = LoadManagedSymbol<BeginConnect>("ConnectionManager_BeginConnect");
     return function;
 }
 
@@ -384,7 +223,16 @@ Send GetSend()
     static const auto function = LoadManagedSymbol<Send>("ConnectionManager_Send");
     return function;
 }
-#endif
+
+// Into the game's packet queue for every connection, the chat's included: the game thread applies the events by
+// handle, in order with the packets. Called inside Dispatch, so nothing is queued once a connection is unregistered.
+void QueueEvent(int32_t handle, Network::ConnectionEvent event)
+{
+    auto entry = std::make_unique<PacketInfo>();
+    entry->ConnectionHandle = handle;
+    entry->Event = event;
+    Network::IncomingPacketQueue::Instance().Push(std::move(entry));
+}
 } // anonymous namespace
 
 void Connection::OnPacketReceivedS(const int32_t handle, const int32_t size, BYTE* data)
@@ -394,17 +242,27 @@ void Connection::OnPacketReceivedS(const int32_t handle, const int32_t size, BYT
 
 void Connection::OnDisconnectedS(const int32_t handle)
 {
-    Connections().Dispatch(handle, [](Connection& connection) { connection.OnDisconnected(); });
+    Connections().Dispatch(handle, [handle](Connection&) { QueueEvent(handle, Network::ConnectionEvent::Closed); });
+}
+
+void Connection::OnOpenedS(const int32_t handle)
+{
+    Connections().Dispatch(handle, [handle](Connection&) { QueueEvent(handle, Network::ConnectionEvent::Opened); });
+}
+
+bool Connection::ApplyQueuedEvent(const int32_t handle, const Network::ConnectionEvent event)
+{
+    return Connections().Dispatch(handle, [event](Connection& connection) { connection.Apply(event); });
 }
 
 Connection::Connection(const char16_t* host, int32_t port, bool isEncrypted,
-                       void (*packetHandler)(int32_t, const BYTE*, int32_t))
+                       void (*packetHandler)(int32_t, const BYTE*, int32_t), bool startReceiving)
 {
     this->_packetHandler = packetHandler;
-    const auto connect = GetConnect();
-    if (!connect)
+    const auto beginConnect = GetBeginConnect();
+    if (!beginConnect)
     {
-        this->_handle = 0;
+        _lifecycle.Apply(Network::ConnectionEvent::Closed); // no connect could start
         return;
     }
 
@@ -412,50 +270,59 @@ Connection::Connection(const char16_t* host, int32_t port, bool isEncrypted,
     mu::log::Get("dotnet")->info("NET: connecting to {} (encrypted={})",
                                  Network::DescribeEndpointForLog(std::u16string_view(host ? host : u""), port),
                                  isEncrypted ? 1 : 0);
-    const int32_t handle = connect(host, port, isEncrypted ? 1 : 0, &OnPacketReceivedS, &OnDisconnectedS);
-    this->_handle = handle;
 
-    mu::log::Get("dotnet")->info("NET: dotnet_connect returned handle={} (encrypted={})", handle, isEncrypted ? 1 : 0);
-
-    if (IsConnected())
+    // The packet senders need the handle, and the object takes callbacks from the moment it is registered.
+    _chatServer = std::make_unique<PacketFunctions_ChatServer>();
+    _connectServer = std::make_unique<PacketFunctions_ConnectServer>();
+    _gameServer = std::make_unique<PacketFunctions_ClientToServer>();
+    const int32_t handle = Connections().AddCreated(
+        [&] { return beginConnect(host, port, isEncrypted ? 1 : 0, &OnPacketReceivedS, &OnDisconnectedS, &OnOpenedS); },
+        this);
+    mu::log::Get("dotnet")->info("NET: connect started, handle={}", handle);
+    if (handle <= 0)
     {
-        this->_id = handle;
+        _lifecycle.Apply(Network::ConnectionEvent::Closed);
+        return;
+    }
 
-        _chatServer = std::make_unique<PacketFunctions_ChatServer>();
-        _connectServer = std::make_unique<PacketFunctions_ConnectServer>();
-        _gameServer = std::make_unique<PacketFunctions_ClientToServer>();
-
-        _chatServer->SetHandle(handle);
-        _connectServer->SetHandle(handle);
-        _gameServer->SetHandle(handle);
-
-        // Register only once the object is complete: callbacks can reach it from here on.
-        Connections().Add(handle, this);
-        if (const auto beginReceive = GetBeginReceive())
-        {
-            beginReceive(handle);
-            mu::log::Get("dotnet")->info("NET: BeginReceive started for handle={}", handle);
-        }
+    this->_handle = handle;
+    this->_id = handle;
+    _chatServer->SetHandle(handle);
+    _connectServer->SetHandle(handle);
+    _gameServer->SetHandle(handle);
+    if (startReceiving)
+    {
+        StartReceiving();
     }
 }
 
 Connection::~Connection()
 {
     // Unregister before disconnecting: this waits for a callback running on this connection, and
-    // the disconnect callback the managed side sends later finds no connection.
+    // the events the managed side sends later find no connection.
     Unregister();
     Close();
 }
 
-bool Connection::IsConnected()
+void Connection::StartReceiving()
 {
-    return this->_handle > 0;
+    const int32_t handle = this->_handle;
+    if (_receiving || handle <= 0)
+    {
+        return;
+    }
+
+    _receiving = true;
+    if (const auto beginReceive = GetBeginReceive())
+    {
+        beginReceive(handle);
+    }
 }
 
 void Connection::Send(const BYTE* data, const int32_t size)
 {
     const int32_t handle = this->_handle;
-    if (handle <= 0)
+    if (handle <= 0 || State() == Network::ConnectionState::Closed)
     {
         return;
     }
@@ -472,6 +339,7 @@ void Connection::Send(const BYTE* data, const int32_t size)
 void Connection::Close()
 {
     this->_id = 0;
+    _lifecycle.CloseLocally();
     const int32_t handle = this->_handle;
     if (handle <= 0)
     {
@@ -489,17 +357,20 @@ void Connection::Unregister()
     Connections().Remove(this->_handle);
 }
 
-void Connection::OnDisconnected()
+void Connection::Apply(const Network::ConnectionEvent event)
 {
-    if (!IsConnected())
+    const bool failed = event == Network::ConnectionEvent::Closed && State() == Network::ConnectionState::Connecting;
+    _lifecycle.Apply(event);
+    if (event == Network::ConnectionEvent::Opened && State() == Network::ConnectionState::Open)
     {
-        mu::log::Get("dotnet")->info("NET: OnDisconnected called but already disconnected");
-        return;
+        mu::log::Get("dotnet")->info("NET: connected, handle={}", GetHandle());
     }
-
-    mu::log::Get("dotnet")->info("NET: OnDisconnected -- handle={}, erasing from connection map", GetHandle());
-    Unregister();
-    this->_handle = 0;
+    else if (event == Network::ConnectionEvent::Closed)
+    {
+        mu::log::Get("dotnet")->info("NET: {}, handle={}", failed ? "connect failed" : "disconnected", GetHandle());
+        Unregister();
+        this->_handle = 0;
+    }
 }
 
 void Connection::OnPacketReceived(const BYTE* data, const int32_t size)
@@ -514,16 +385,9 @@ void Connection::OnPacketReceived(const BYTE* data, const int32_t size)
     this->_packetHandler(handle, data, size);
 }
 
-
 void Connection_SendRaw(int32_t handle, const BYTE* data, int32_t size)
 {
-    if (Connections().Dispatch(handle, [data, size](Connection& connection) { connection.Send(data, size); }))
-    {
-        return;
-    }
-#ifdef __EMSCRIPTEN__
-    Wasm_Send(handle, data, size);
-#endif
+    Connections().Dispatch(handle, [data, size](Connection& connection) { connection.Send(data, size); });
 }
 
 
